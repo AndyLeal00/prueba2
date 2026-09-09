@@ -8,7 +8,8 @@ const extra = Constants.expoConfig?.extra || {};
 
 const SupabaseConfig = {
   url: extra.SUPABASE_URL as string,
-  anonKey: extra.SUPABASE_ANON_KEY as string,
+  publishableKey: (extra.SUPABASE_PUBLISHABLE_KEY || extra.SUPABASE_ANON_KEY) as string,
+  projectRef: extra.SUPABASE_PROJECT_REF as string,
 };
 
 import { Database } from './database.types';
@@ -45,7 +46,9 @@ interface DatabaseHealth {
   isHealthy: boolean;
 }
 
-const SESSION_STORAGE_KEY = 'tmasplus_auth_session';
+const projectRefFromUrl = SupabaseConfig.url.match(/^https:\/\/([a-z0-9]+)\.supabase\.co\/?$/)?.[1];
+export const SUPABASE_PROJECT_REF = SupabaseConfig.projectRef || projectRefFromUrl || 'unknown-project';
+export const SESSION_STORAGE_KEY = `tmasplus_auth_session_${SUPABASE_PROJECT_REF}`;
 
 const toErrorMessage = (error: any): string => {
   if (!error) return '';
@@ -125,7 +128,7 @@ console.log('Supabase URL efectiva:', SupabaseConfig.url);
 // ==================== CLIENTE PRINCIPAL SUPABASE TIPADO ====================
 export const supabase: SupabaseClient<Database> = createClient<Database>(
   SupabaseConfig.url,
-  SupabaseConfig.anonKey,
+  SupabaseConfig.publishableKey,
   createSupabaseClientOptions()
 ); 
 
@@ -142,7 +145,9 @@ export const isPasswordRecoveryInProgress = (): boolean => _passwordRecoveryInPr
 
 // ==================== REST API CREDENTIALS (for direct fetch calls) ====================
 export const SUPABASE_URL = SupabaseConfig.url;
-export const SUPABASE_ANON_KEY = SupabaseConfig.anonKey;
+export const SUPABASE_PUBLISHABLE_KEY = SupabaseConfig.publishableKey;
+// Alias temporal para llamadas REST legacy.
+export const SUPABASE_ANON_KEY = SUPABASE_PUBLISHABLE_KEY;
 
 /**
  * Build auth headers for direct Supabase REST API calls.
@@ -151,7 +156,7 @@ export const SUPABASE_ANON_KEY = SupabaseConfig.anonKey;
 export const getSupabaseAuthHeaders = async (includeContentType = false) => {
   let token = SUPABASE_ANON_KEY;
   try {
-    const raw = await AsyncStorage.getItem('tmasplus_auth_session');
+    const raw = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       const jwt = parsed?.access_token;
@@ -401,10 +406,10 @@ export const Health = {
       errors.push('SUPABASE_URL no parece ser una URL valida de Supabase');
     }
 
-    if (!SupabaseConfig.anonKey) {
-      errors.push('SUPABASE_ANON_KEY no configurada');
-    } else if (SupabaseConfig.anonKey.length < 100) {
-      warnings.push('SUPABASE_ANON_KEY parece ser muy corta');
+    if (!SupabaseConfig.publishableKey) {
+      errors.push('SUPABASE_PUBLISHABLE_KEY no configurada');
+    } else if (!SupabaseConfig.publishableKey.startsWith('sb_publishable_')) {
+      warnings.push('La API key no usa el formato publishable actual');
     }
 
     // Validaciones de seguridad

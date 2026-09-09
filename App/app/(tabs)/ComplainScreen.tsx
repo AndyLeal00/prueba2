@@ -21,7 +21,7 @@ import { fetchComplains, addComplain } from "@/common/store/complainSlice";
 import { RootState, AppDispatch } from "@/common/store";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/config/SupabaseConfig';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SESSION_STORAGE_KEY } from '@/config/SupabaseConfig';
 import CustomAlert, { AlertButton } from '@/components/CustomAlert';
 
 const MAX_EVIDENCE_IMAGES = 5;
@@ -189,7 +189,7 @@ const Complain = ({ navigation }: Props) => {
   const uploadEvidenceImages = async (): Promise<string[]> => {
     if (evidenceImages.length === 0) return [];
 
-    const sessionRaw = await AsyncStorage.getItem("tmasplus_auth_session");
+    const sessionRaw = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
     const token = sessionRaw ? JSON.parse(sessionRaw).access_token : SUPABASE_ANON_KEY;
     const userId = userAny?.uid || userAny?.id || "unknown";
     const urls: string[] = [];

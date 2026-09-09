@@ -28,7 +28,7 @@ import defaultProfileImage from "./../../assets/images/Avatar/1.png";
 import { getUserVerification } from "@/common/topus-integration";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, supabase } from '@/config/SupabaseConfig';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SESSION_STORAGE_KEY, supabase } from '@/config/SupabaseConfig';
 type Props = NativeStackScreenProps<any>;
 import {
   listenToSettingsChanges,
@@ -133,7 +133,7 @@ const DocumentsScreen = ({ navigation }: Props) => {
         // Si el bucket/tabla requiere RLS authenticated, mandamos el JWT de la sesión.
         let bearer = SUPABASE_ANON_KEY;
         try {
-          const sessionStr = await AsyncStorage.getItem('tmasplus_auth_session');
+          const sessionStr = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
           if (sessionStr) {
             const sessionData = JSON.parse(sessionStr);
             const token = sessionData?.access_token || sessionData?.session?.access_token;
@@ -328,7 +328,7 @@ const DocumentsScreen = ({ navigation }: Props) => {
 
   const resolveAuthIdFromSession = async (): Promise<string | null> => {
     try {
-      const sessionStr = await AsyncStorage.getItem('tmasplus_auth_session');
+      const sessionStr = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
       if (sessionStr) {
         const sessionData = JSON.parse(sessionStr);
         const token = sessionData?.access_token || sessionData?.session?.access_token;

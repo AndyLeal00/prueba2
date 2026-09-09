@@ -423,7 +423,7 @@ const TripPreviewScreen = () => {
       // Leer config directamente
       const extra = require("expo-constants").default?.expoConfig?.extra || {};
       const baseUrl = extra.SUPABASE_URL;
-      const anonKey = extra.SUPABASE_ANON_KEY;
+      const anonKey = extra.SUPABASE_PUBLISHABLE_KEY || extra.SUPABASE_ANON_KEY;
 
       if (!baseUrl || !anonKey) {
         console.error("❌ [RecentTrips] Config no disponible");
@@ -434,7 +434,8 @@ const TripPreviewScreen = () => {
       const AsyncStorageLib = require("@react-native-async-storage/async-storage").default;
       let accessToken = anonKey;
       try {
-        const stored = await AsyncStorageLib.getItem("tmasplus_auth_session");
+        const projectRef = extra.SUPABASE_PROJECT_REF || 'unknown-project';
+        const stored = await AsyncStorageLib.getItem(`tmasplus_auth_session_${projectRef}`);
         if (stored) {
           const parsed = JSON.parse(stored);
           const jwt = parsed?.access_token || parsed?.currentSession?.access_token;

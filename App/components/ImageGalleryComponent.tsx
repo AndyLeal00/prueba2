@@ -19,7 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { decode } from "base64-arraybuffer";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/config/SupabaseConfig";
+import { SESSION_STORAGE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/config/SupabaseConfig";
 import { updateUserProfile } from "@/common/reducers/authReducer";
 
 type Props = NativeStackScreenProps<any>;
@@ -288,7 +288,7 @@ const ImageGalleryComponent = ({ navigation, route }: Props) => {
     //    NO usar supabase.auth.getSession(): en RN su lock interno se queda colgado
     //    (por eso el botón se quedaba en "Guardando..." sin avanzar de "obteniendo sesión").
     console.log('[ImageGallery] uploadDoc: leyendo sesión de AsyncStorage...');
-    const sessionStr = await AsyncStorage.getItem('tmasplus_auth_session');
+    const sessionStr = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
     if (!sessionStr) throw new Error('Sesión no encontrada. Inicia sesión nuevamente.');
     const sessionData = JSON.parse(sessionStr);
     const token: string | undefined = sessionData?.access_token || sessionData?.session?.access_token;

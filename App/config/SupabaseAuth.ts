@@ -1,7 +1,7 @@
 import { AuthError, AuthTokenResponsePassword, Session, User } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import * as ExpoLinking from 'expo-linking';
-import { supabase } from './SupabaseConfig';
+import { SESSION_STORAGE_KEY, supabase } from './SupabaseConfig';
 
 // ==================== INTERFACES TYPESCRIPT ====================
 interface LoginCredentials {
@@ -60,8 +60,6 @@ const AUTH_ERRORS = {
 };
 
 const PASSWORD_MIN_LENGTH = 8;
-const SESSION_STORAGE_KEY = 'tmasplus_auth_session';
-
 // ==================== UTILIDADES DE VALIDACION ====================
 const ValidationUtils = {
   /**

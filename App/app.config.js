@@ -1,5 +1,6 @@
 // Load .env early so environment variables are available
 require('dotenv').config();
+const supabaseEnvironment = require('./config/supabase.environment');
 
 // Construct AppConfig from environment variables directly instead of requiring a JS file.
 const AppConfig = {
@@ -21,9 +22,6 @@ const AppConfig = {
     expo_slug: process.env.EXPO_SLUG || 'tmasplus',
     expo_project_id: process.env.EXPO_PROJECT_ID || '16f8e33a-1dda-48f1-84a6-eeb3c8c5c51f'
 };
-
-    const SUPABASE_URL = process.env.SUPABASE_URL || '';
-    const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
     // Claves separadas por plataforma: react-native-maps usa PROVIDER_GOOGLE en
     // varias pantallas, y una clave restringida a apps Android deja el mapa en
@@ -72,8 +70,12 @@ module.exports = {
         APP_DISPLAY_NAME: AppConfig.app_display_name,
         APP_IDENTIFIER: AppConfig.app_identifier,
         EXPO_PROJECT_ID: AppConfig.expo_project_id,
-        SUPABASE_URL: process.env.SUPABASE_URL || '',
-        SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
+        SUPABASE_URL: supabaseEnvironment.url,
+        SUPABASE_PUBLISHABLE_KEY: supabaseEnvironment.publishableKey,
+        // Alias temporal para consumidores legacy. Contiene la misma publishable
+        // key cliente, no una anon JWT ni una service_role.
+        SUPABASE_ANON_KEY: supabaseEnvironment.publishableKey,
+        SUPABASE_PROJECT_REF: supabaseEnvironment.projectRef,
         SUPABASE_EMAIL_REDIRECT_TO: process.env.SUPABASE_EMAIL_REDIRECT_TO || 'https://dashboard.tmasplus.com/welcome',
         GOOGLE_MAPS_API_KEY_ANDROID: process.env.GOOGLE_MAPS_API_KEY_ANDROID || '',
         GOOGLE_MAPS_API_KEY_IOS: process.env.GOOGLE_MAPS_API_KEY_IOS || '',
