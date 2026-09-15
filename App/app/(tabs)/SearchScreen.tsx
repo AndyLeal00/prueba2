@@ -28,6 +28,7 @@ import { API_KEY } from "@/config/AppConfig";
 import { SUPABASE_URL, SUPABASE_ANON_KEY, getSupabaseAuthHeaders } from '@/config/SupabaseConfig';
 import CustomAlert, { AlertButton } from '@/components/CustomAlert';
 import { useCustomerNavBottomPad } from '@/components/CustomerBottomNav';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ── Supabase REST directo (el cliente JS cuelga) ──
 const MAX_FAVORITES = 5;
@@ -111,7 +112,9 @@ const DiamondParticle = ({ size, x, y, color, duration, delay }: typeof PARTICLE
 export default function FavoritesScreen({ navigation }: Props) {
   const user = useSelector((state: RootState) => state.auth.user) as any;
   const profile = useSelector((state: RootState) => state.auth.profile) as any;
+  const insets = useSafeAreaInsets();
   const navBottomPad = useCustomerNavBottomPad();
+  const headerTopPadding = Math.max(insets.top, Platform.OS === 'ios' ? 20 : 18) + 6;
   const isCustomer = String(
     profile?.user_type ||
       user?.usertype ||
@@ -594,23 +597,24 @@ export default function FavoritesScreen({ navigation }: Props) {
       <Animated.View
         style={[
           styles.header,
+          isCustomer && styles.headerCustomer,
           {
+            paddingTop: headerTopPadding,
             opacity: headerAnim,
             transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }],
           },
         ]}
       >
-        {isCustomer ? (
-          <View style={{ width: 44, marginRight: 12 }} />
-        ) : (
+        {!isCustomer ? (
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={{ padding: 10, marginRight: 12 }}
+            style={styles.backButton}
           >
             <AntDesign name="arrow-left" size={24} color="#E9F6FF" />
           </TouchableOpacity>
-        )}
-        <View style={styles.headerCenter}>
+        ) : null}
+        <View style={[styles.headerTitleWrap, isCustomer && styles.headerTitleWrapCustomer]}>
+          {isCustomer ? <Text style={styles.headerEyebrow}>T+plus</Text> : null}
           <Text style={styles.headerTitle}>Mis Direcciones</Text>
           <Text style={styles.headerSubtitle}>
             {favoriteCount}/{MAX_FAVORITES} favoritos • {addresses.length} {addresses.length === 1 ? "lugar" : "lugares"}
@@ -922,9 +926,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingTop: Platform.OS === "ios" ? 56 : 48,
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 14,
+  },
+  headerCustomer: {
+    backgroundColor: "rgba(5,26,38,0.85)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.08)",
   },
   backButton: {
     width: 40,
@@ -933,19 +941,30 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 12,
   },
-  headerCenter: {
+  headerTitleWrap: {
     flex: 1,
-    marginLeft: 14,
+    paddingHorizontal: 12,
+  },
+  headerTitleWrapCustomer: {
+    paddingHorizontal: 0,
+  },
+  headerEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#00E5FF",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "700",
-    color: "#fff",
-    letterSpacing: 0.5,
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "rgba(255,255,255,0.45)",
     marginTop: 2,
   },

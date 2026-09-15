@@ -530,7 +530,10 @@ const DocumentsScreen = ({ navigation }: Props) => {
       </View>
       <View style={styles.fieldContent}>
         <Text style={styles.fieldLabel}>{label}</Text>
-        <Text style={[styles.fieldValue, !value && styles.fieldPlaceholder]}>
+        <Text
+          style={[styles.fieldValue, !value && styles.fieldPlaceholder]}
+          numberOfLines={1}
+        >
           {value || "Toca para agregar"}
         </Text>
       </View>
@@ -617,7 +620,7 @@ const DocumentsScreen = ({ navigation }: Props) => {
             <Image source={displayImage} style={styles.profileImage} />
           </Animated.View>
           <View style={styles.cameraIcon}>
-            <Ionicons name="camera" size={16} color="#071822" />
+          <Ionicons name="camera" size={14} color="#071822" />
           </View>
           {imageUriVehicle && (
             <View style={styles.imageChangedBadge}>
@@ -633,7 +636,9 @@ const DocumentsScreen = ({ navigation }: Props) => {
           <Text style={styles.userName}>
             {name || lastName ? `${name} ${lastName}`.trim() : "Sin nombre"}
           </Text>
-          <Text style={styles.userEmail}>{email || "Sin email"}</Text>
+          <Text style={styles.userEmail} numberOfLines={1}>
+            {email || "Sin email"}
+          </Text>
           {profile?.user_type && (
             <View style={styles.userTypeBadge}>
               <Text style={styles.userTypeText}>
@@ -650,7 +655,7 @@ const DocumentsScreen = ({ navigation }: Props) => {
             onPress={() => navigation.navigate("ImageGallery")}
             activeOpacity={0.85}
           >
-            <AntDesign name="idcard" size={22} color="#E91E63" />
+            <AntDesign name="idcard" size={18} color="#E91E63" />
             <Text style={styles.buttonText}>Documentos</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -896,17 +901,17 @@ const createStyles = (isDarkMode: boolean) =>
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      paddingHorizontal: 20,
-      paddingTop: 48,
-      paddingBottom: 12,
+      paddingHorizontal: 16,
+      paddingTop: Platform.OS === "android" ? 40 : 48,
+      paddingBottom: 10,
       zIndex: 2,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: "rgba(255,255,255,0.08)",
     },
     headerBtn: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      borderWidth: 1,
-      borderColor: "rgba(0,229,255,0.15)",
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       backgroundColor: "rgba(10, 46, 61, 0.65)",
       alignItems: "center",
       justifyContent: "center",
@@ -916,51 +921,44 @@ const createStyles = (isDarkMode: boolean) =>
       alignItems: "center",
     },
     headerText: {
-      fontSize: 20,
-      fontWeight: "800",
-      color: "#E9F6FF",
-      letterSpacing: 0.2,
+      fontSize: 16,
+      fontWeight: "600",
+      color: "#FFFFFF",
+      letterSpacing: -0.2,
     },
     headerBadge: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: "rgba(0,229,255,0.18)",
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       backgroundColor: "rgba(10, 46, 61, 0.65)",
       alignItems: "center",
       justifyContent: "center",
     },
     profileContainer: {
       alignItems: "center",
-      marginTop: 8,
-      marginBottom: 16,
+      marginTop: 14,
+      marginBottom: 10,
     },
     profileRing: {
-      width: 124,
-      height: 124,
-      borderRadius: 62,
-      padding: 3,
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+      padding: 2.5,
       backgroundColor: "#00E5FF",
-      shadowColor: "#00E5FF",
-      shadowOpacity: 0.3,
-      shadowRadius: 20,
-      shadowOffset: { width: 0, height: 10 },
-      elevation: 12,
     },
     profileImage: {
-      width: 118,
-      height: 118,
-      borderRadius: 59,
+      width: 91,
+      height: 91,
+      borderRadius: 45.5,
       backgroundColor: "#0A2E3D",
     },
     cameraIcon: {
       position: "absolute",
-      bottom: 28,
-      right: "33%",
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      bottom: 22,
+      right: "36%",
+      width: 28,
+      height: 28,
+      borderRadius: 14,
       backgroundColor: "#00E5FF",
       alignItems: "center",
       justifyContent: "center",
@@ -970,13 +968,13 @@ const createStyles = (isDarkMode: boolean) =>
     imageChangedBadge: {
       flexDirection: "row",
       alignItems: "center",
-      backgroundColor: "rgba(0, 229, 255, 0.15)",
+      backgroundColor: "rgba(0, 229, 255, 0.12)",
       paddingHorizontal: 10,
       paddingVertical: 4,
-      borderRadius: 12,
+      borderRadius: 10,
       marginTop: 8,
       borderWidth: 1,
-      borderColor: "rgba(0, 229, 255, 0.3)",
+      borderColor: "rgba(0, 229, 255, 0.25)",
     },
     imageChangedText: {
       color: "#00E5FF",
@@ -985,166 +983,162 @@ const createStyles = (isDarkMode: boolean) =>
       marginLeft: 4,
     },
     avatarHint: {
-      marginTop: 6,
-      color: "#8FB3C5",
+      marginTop: 8,
+      color: "rgba(255,255,255,0.45)",
       fontSize: 12,
       fontWeight: "500",
     },
     userInfoCard: {
       alignItems: "center",
-      marginBottom: 20,
+      marginBottom: 14,
+      paddingHorizontal: 8,
     },
     userName: {
-      fontSize: 22,
-      fontWeight: "800",
-      color: "#E9F6FF",
-      letterSpacing: 0.3,
+      fontSize: 16,
+      fontWeight: "700",
+      color: "#FFFFFF",
+      textAlign: "center",
     },
     userEmail: {
-      fontSize: 13,
-      color: "#7BA8BC",
+      fontSize: 12,
+      color: "rgba(255,255,255,0.5)",
       marginTop: 4,
+      textAlign: "center",
     },
     userTypeBadge: {
       marginTop: 8,
       backgroundColor: "rgba(0, 229, 255, 0.12)",
-      paddingHorizontal: 14,
-      paddingVertical: 5,
-      borderRadius: 20,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 8,
       borderWidth: 1,
-      borderColor: "rgba(0, 229, 255, 0.25)",
+      borderColor: "rgba(0, 229, 255, 0.3)",
     },
     userTypeText: {
-      fontSize: 12,
+      fontSize: 10,
       color: "#00E5FF",
       fontWeight: "700",
       textTransform: "uppercase",
-      letterSpacing: 0.8,
+      letterSpacing: 0.4,
     },
     buttonContainer: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 22,
-      gap: 10,
+      marginBottom: 12,
+      gap: 8,
     },
     updateButton: {
       backgroundColor: "#00E5FF",
-      paddingVertical: 14,
-      borderRadius: 20,
+      paddingVertical: 12,
+      borderRadius: 12,
       alignItems: "center",
       flex: 1,
-      shadowColor: "#00E5FF",
-      shadowOpacity: 0.34,
-      shadowRadius: 12,
-      shadowOffset: { width: 0, height: 6 },
-      elevation: 8,
     },
     updateButtonText: {
       color: "#04202C",
-      fontSize: 14,
-      fontWeight: "800",
-      letterSpacing: 0.2,
+      fontSize: 13,
+      fontWeight: "700",
     },
     documentsButton: {
-      backgroundColor: "rgba(9, 45, 60, 0.72)",
-      paddingVertical: 14,
-      borderRadius: 20,
+      backgroundColor: "rgba(10,46,61,0.55)",
+      paddingVertical: 12,
+      borderRadius: 12,
       alignItems: "center",
       flexDirection: "row",
       justifyContent: "center",
       flex: 1,
       borderWidth: 1,
-      borderColor: "rgba(255, 106, 123, 0.4)",
+      borderColor: "rgba(233,30,99,0.35)",
     },
     buttonText: {
       color: "#E91E63",
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: "700",
       marginLeft: 8,
     },
     carnetButton: {
       backgroundColor: "rgba(0, 229, 255, 0.08)",
-      paddingVertical: 14,
-      borderRadius: 20,
+      paddingVertical: 12,
+      borderRadius: 12,
       alignItems: "center",
       flexDirection: "row",
       justifyContent: "center",
-      marginBottom: 22,
+      marginBottom: 12,
       borderWidth: 1,
-      borderColor: "rgba(0, 229, 255, 0.4)",
+      borderColor: "rgba(0, 229, 255, 0.28)",
     },
     carnetButtonText: {
       color: "#00E5FF",
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: "700",
       marginLeft: 8,
     },
     scrollContent: {
-      paddingHorizontal: 20,
+      paddingHorizontal: 16,
       paddingBottom: 28,
       zIndex: 2,
     },
     infoContainer: {
-      backgroundColor: "rgba(8, 36, 49, 0.72)",
-      borderRadius: 20,
-      padding: 16,
+      backgroundColor: "rgba(10,46,61,0.55)",
+      borderRadius: 14,
+      padding: 12,
       borderWidth: 1,
-      borderColor: "rgba(0, 229, 255, 0.14)",
+      borderColor: "rgba(0,229,255,0.12)",
     },
     sectionTitle: {
-      fontSize: 13,
-      color: "#00E5FF",
+      fontSize: 12,
+      color: "rgba(0,229,255,0.85)",
       fontWeight: "700",
       textTransform: "uppercase",
-      letterSpacing: 1,
-      marginBottom: 12,
-      marginTop: 4,
+      letterSpacing: 0.6,
+      marginBottom: 10,
     },
     sectionDivider: {
-      height: 1,
-      backgroundColor: "rgba(0, 229, 255, 0.1)",
-      marginVertical: 14,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: "rgba(0, 229, 255, 0.12)",
+      marginVertical: 10,
     },
-    // Field Row (tap to edit pattern)
     fieldRow: {
       flexDirection: "row",
       alignItems: "center",
-      backgroundColor: "rgba(7, 35, 48, 0.6)",
-      borderRadius: 14,
-      padding: 14,
-      marginBottom: 10,
+      backgroundColor: "rgba(0,229,255,0.04)",
+      borderRadius: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      marginBottom: 8,
       borderWidth: 1,
-      borderColor: "rgba(0, 229, 255, 0.1)",
+      borderColor: "rgba(0,229,255,0.1)",
     },
     fieldIconContainer: {
-      width: 38,
-      height: 38,
-      borderRadius: 12,
+      width: 32,
+      height: 32,
+      borderRadius: 8,
       backgroundColor: "rgba(0, 229, 255, 0.08)",
       alignItems: "center",
       justifyContent: "center",
-      marginRight: 12,
+      marginRight: 10,
     },
     fieldContent: {
       flex: 1,
+      minWidth: 0,
+      marginRight: 8,
     },
     fieldLabel: {
       fontSize: 11,
-      color: "#7BA8BC",
+      color: "rgba(255,255,255,0.42)",
       fontWeight: "600",
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-      marginBottom: 3,
+      marginBottom: 2,
     },
     fieldValue: {
-      fontSize: 15,
-      color: "#E9F6FF",
-      fontWeight: "500",
+      fontSize: 13,
+      color: "#FFFFFF",
+      fontWeight: "600",
     },
     fieldPlaceholder: {
-      color: "#4A7A8F",
+      color: "rgba(255,255,255,0.35)",
       fontStyle: "italic",
+      fontWeight: "500",
     },
     // Image picker modal
     modalContainer: {

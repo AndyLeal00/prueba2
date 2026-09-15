@@ -19,6 +19,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, getSupabaseAuthHeaders } from '@/confi
 import { updateDriverNotification, notifyNewBooking } from '@/hooks/DriverNotificationService';
 import { fetchMemberships } from '@/common/reducers/membershipSlice';
 import { toCanonicalCarType } from '@/common/utils/carType';
+import { formatBookingFareRange } from '@/constants/fare';
 
 const IMMEDIATE_RANGE_KM = 3;
 
@@ -877,8 +878,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
         <View style={s.statsRow}>
           <View style={s.stat}>
             <Text style={s.statLabel}>Valor</Text>
-            <Text style={s.statValue}>$ {fmtMoney(item.driver_share)}</Text>
-            <Text style={s.statValue}>$ {fmtMoney(item.estimate || item.price)}</Text>
+            <Text style={s.statValue}>{formatBookingFareRange(item)}</Text>
           </View>
           <View style={s.stat}>
             <Text style={s.statLabel}>Dist.</Text>

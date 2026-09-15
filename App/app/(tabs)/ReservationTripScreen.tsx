@@ -29,6 +29,8 @@ import { useOtpTimer } from '@/hooks/useOtpTimer';
 import { notifyIncomingCall } from '@/common/services/NotificationService';
 import { shareTrip } from '@/common/utils/tripShare';
 import { addActualsToBooking } from '@/common/other/sharedFunctions';
+import { formatBookingFareRange } from '@/constants/fare';
+import { fetchAndSyncUserRating } from '@/common/utils/userRating';
 import StarRating from 'react-native-star-rating-widget';
 
 const { width, height } = Dimensions.get('window');
@@ -257,14 +259,20 @@ const ReservationTripScreen = () => {
     if (distanceToPickup === null || distanceToPickup > 800) return;
 
     voiceReminderSent.current = true;
-    const price = reservation.estimate || reservation.price || 0;
+    // Anunciar el mínimo del rango (trip_cost / driver_share).
+    const price =
+      Number(reservation.trip_cost) ||
+      Number(reservation.driver_share) ||
+      Number(reservation.price) ||
+      Number(reservation.estimate) ||
+      0;
     const priceFormatted = price.toLocaleString('es-CO');
 
     let voiceMsg = `Estás llegando al punto de recogida de ${reservation.customer_name}. `;
     if (paymentMode === 'cash') {
-      voiceMsg += `El pago es en efectivo por ${priceFormatted} pesos.`;
+      voiceMsg += `El pago estimado mínimo es en efectivo por ${priceFormatted} pesos.`;
     } else {
-      voiceMsg += `El pago es por ${paymentLabel} por ${priceFormatted} pesos. Recuerda confirmar la transferencia al finalizar el viaje.`;
+      voiceMsg += `El pago estimado mínimo es por ${paymentLabel} por ${priceFormatted} pesos. Recuerda confirmar la transferencia al finalizar el viaje.`;
     }
 
     Speech.stop().then(() => {
@@ -537,18 +545,25 @@ const ReservationTripScreen = () => {
         // cliente. Duplicarla aquí generaba doble notificación. Se conservan las
         // notificaciones de PAGO abajo porque llevan info que el dispatcher no da.
 
-        // Notificación de pago
+        // Notificación de pago — anunciar MÍNIMO del rango (mismo valor ambos lados)
+        const quoteMin =
+          Number(reservation.trip_cost) ||
+          Number(reservation.driver_share) ||
+          Number(reservation.price) ||
+          Number(reservation.estimate) ||
+          0;
+        const quoteMinTxt = quoteMin.toLocaleString('es-CO');
         if (paymentMode === 'cash') {
           sendPushNotification(
             reservation.customer_token,
             `${reservation.customer_name}, pago en efectivo`,
-            `Pago en efectivo por $${(reservation.estimate || reservation.price || 0).toLocaleString('es-CO')}. El viaje comenzará pronto.`,
+            `Pago estimado desde $${quoteMinTxt}. El viaje comenzará pronto.`,
           );
         } else {
           sendPushNotification(
             reservation.customer_token,
             `${reservation.customer_name}, pago por ${paymentLabel}`,
-            `Prepárate para transferir $${(reservation.estimate || reservation.price || 0).toLocaleString('es-CO')} al: ${driverPaymentNumber}`,
+            `Prepárate para transferir desde $${quoteMinTxt} al: ${driverPaymentNumber}`,
           );
         }
       }
@@ -874,24 +889,7 @@ const ReservationTripScreen = () => {
       // Recalcular promedio del cliente (no bloquea el flujo si falla)
       if (customerId) {
         try {
-          const pastRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/bookings?customer_id=eq.${customerId}&customer_rating=not.is.null&select=customer_rating`,
-            { method: 'GET', headers },
-          );
-          if (pastRes.ok) {
-            const pastBookings: any[] = await pastRes.json();
-            if (pastBookings?.length) {
-              const avg = (
-                pastBookings.reduce((s: number, b: any) => s + (Number(b.customer_rating) || 0), 0) /
-                pastBookings.length
-              ).toFixed(1);
-              await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${customerId}`, {
-                method: 'PATCH',
-                headers: { ...headers, Prefer: 'return=minimal' },
-                body: JSON.stringify({ rating: Number(avg) }),
-              });
-            }
-          }
+          await fetchAndSyncUserRating(String(customerId), 'customer', { syncToProfile: true });
         } catch (e) {
           console.warn('No se pudo recalcular el promedio del cliente:', e);
         }
@@ -1177,10 +1175,7 @@ const ReservationTripScreen = () => {
             <View style={s.priceHighlight}>
               <Ionicons name="cash" size={16} color="#00E5FF" />
               <Text style={s.priceHighlightText}>
-                {reservation.status === 'COMPLETE' 
-                  ? `$ ${(reservation.price || reservation.estimate || 0).toLocaleString('es-CO')}`
-                  : `$ ${(reservation.driver_share || reservation.price || reservation.estimate || 0).toLocaleString('es-CO')} - $ ${(reservation.price || reservation.estimate || 0).toLocaleString('es-CO')}`
-                }
+                {formatBookingFareRange(reservation)}
               </Text>
             </View>
             <Text style={s.metaDivider}>•</Text>
@@ -1222,10 +1217,7 @@ const ReservationTripScreen = () => {
                 </Text>
               </View>
               <Text style={s.priceCardAmount}>
-                {reservation.status === 'COMPLETE' 
-                  ? `$ ${(reservation.price || reservation.estimate || 0).toLocaleString('es-CO')}`
-                  : `$ ${(reservation.driver_share || reservation.price || reservation.estimate || 0).toLocaleString('es-CO')} - $ ${(reservation.price || reservation.estimate || 0).toLocaleString('es-CO')}`
-                }
+                {formatBookingFareRange(reservation)}
               </Text>
               <View style={s.priceCardPayment}>
                 <Ionicons

@@ -67,7 +67,7 @@ const CarDetails = ({ visible, onSelectVehicle, distance, duration, tolls, isSch
   const durMin  = parseFloat(duration) / 60;
   const isIntermunicipal = distKm > (vehicle.umbral_intermunicipal_km || DEFAULT_UMBRAL_INTERMUNICIPAL_KM);
 
-  const { grandTotal } = FareCalculator(
+  const { totalCost, clientTotal } = FareCalculator(
     distKm,
     durMin * 60,
     vehicle,
@@ -78,7 +78,8 @@ const CarDetails = ({ visible, onSelectVehicle, distance, duration, tolls, isSch
 
   return {
     ...vehicle,
-    estimatedPrice: grandTotal,
+    estimatedPrice: totalCost,
+    estimatedPriceMax: clientTotal,
   };
 });
 
@@ -161,8 +162,8 @@ const CarDetails = ({ visible, onSelectVehicle, distance, duration, tolls, isSch
             Servicio {option.capacity}
           </Text>
           <Text style={styles.taxiPrice}>
-            Valor estimado: ${option.estimatedPrice} - $
-            {option.estimatedPrice + 7000}
+            Valor estimado: ${Number(option.estimatedPrice || 0).toLocaleString('es-CO')} - $
+            {Number(option.estimatedPriceMax || option.estimatedPrice || 0).toLocaleString('es-CO')}
           </Text>
         </View>
       </TouchableOpacity>

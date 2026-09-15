@@ -29,10 +29,12 @@ import {
   isActiveTripStatus,
   notifyTripStateChange,
 } from '@/common/services/ActiveTripNotificationService';
+import { fetchAndSyncUserRating } from '@/common/utils/userRating';
 import { sendPushNotification } from '@/common/actions/NotificationService';
 import { haversineKm, formatDistanceAndEta, DistanceEtaState } from '@/common/services/DriverTrackingService';
 import { shareTrip } from '@/common/utils/tripShare';
 import { useAnimatedDriverMarker, fitPickupAndDriver, shouldRefitCamera } from '@/hooks/useAnimatedDriverMarker';
+import { formatBookingFareRange } from '@/constants/fare';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
 
@@ -353,23 +355,7 @@ const CustomerActiveTripScreen = () => {
       // Recalcular promedio del conductor en users.rating
       if (booking.driver_id) {
         try {
-          const headersRead = await getSupabaseAuthHeaders();
-          const listUrl = `${SUPABASE_URL}/rest/v1/bookings?driver_id=eq.${booking.driver_id}&driver_rating=not.is.null&select=driver_rating`;
-          const listRes = await fetch(listUrl, { headers: headersRead });
-          if (listRes.ok) {
-            const rows: Array<{ driver_rating: number }> = await listRes.json();
-            if (rows?.length) {
-              const avg = (
-                rows.reduce((sum, r) => sum + (Number(r.driver_rating) || 0), 0) / rows.length
-              ).toFixed(1);
-              const userUrl = `${SUPABASE_URL}/rest/v1/users?id=eq.${booking.driver_id}`;
-              await fetch(userUrl, {
-                method: 'PATCH',
-                headers,
-                body: JSON.stringify({ rating: avg }),
-              });
-            }
-          }
+          await fetchAndSyncUserRating(booking.driver_id, 'driver', { syncToProfile: true });
         } catch (avgErr) {
           console.warn('⚠️ [RATING] No se pudo actualizar promedio del conductor:', avgErr);
         }
@@ -997,14 +983,14 @@ const CustomerActiveTripScreen = () => {
                 <>
                   <Text style={s.priceInStatusLabel}>💰 Valor Final Liquidado</Text>
                   <Text style={s.priceInStatusAmount}>
-                    $ {(booking.price || booking.estimate || 0).toLocaleString('es-CO')}
+                    {formatBookingFareRange(booking)}
                   </Text>
                 </>
               ) : (
                 <>
                   <Text style={s.priceInStatusLabel}>💰 Valor Estimado</Text>
                   <Text style={s.priceInStatusAmount}>
-                    $ {(booking.driver_share || booking.price || booking.estimate || 0).toLocaleString('es-CO')} - $ {(booking.price || booking.estimate || 0).toLocaleString('es-CO')}
+                    {formatBookingFareRange(booking)}
                   </Text>
                 </>
               )}
@@ -1657,7 +1643,7 @@ const CustomerActiveTripScreen = () => {
 
             <Text style={s.tripSummaryTotalLabel}>Valor final del servicio</Text>
             <Text style={s.tripSummaryTotalAmount}>
-              $ {(booking?.price || booking?.estimate || 0).toLocaleString('es-CO')}
+              {formatBookingFareRange(booking)}
             </Text>
 
             <View style={s.tripSummaryRow}>

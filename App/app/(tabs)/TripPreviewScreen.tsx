@@ -53,7 +53,7 @@ type VehiclePriceCfg = {
   deltaAeropuerto: number; deltaProgramado: number;
 };
 
-// Fallback mientras carga la DB (valores del Excel)
+// Fallback mientras carga la DB
 const VEHICLE_PRICE_CONFIG_DEFAULT: Record<number, VehiclePriceCfg> = {
   1: { base: 10800, perKm: 660, perMin: 600, minFare: 19200, deltaAeropuerto: 12000, deltaProgramado: 4800 },
   2: { base: 4800,  perKm: 540, perMin: 460, minFare: 8400,  deltaAeropuerto: 12000, deltaProgramado: 4800 },

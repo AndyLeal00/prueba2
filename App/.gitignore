@@ -84,7 +84,10 @@ yarn-error.*
 .tmp-bundle/
 # typescript
 *.tsbuildinfo
-
+../.idea/
+documentacion/
+documentacion/sql
+../documentacion/
 # generated API docs (regenerar con `npm run docs`)
 docs/api/
 

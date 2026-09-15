@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootState } from '@/common/store';
 import { SUPABASE_URL, getSupabaseAuthHeaders } from '@/config/SupabaseConfig';
 import { useCustomerNavBottomPad } from '@/components/CustomerBottomNav';
+import { formatBookingFareRange } from '@/constants/fare';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
 const PAGE_SIZE = 50;
@@ -150,7 +151,7 @@ const ReservationCard = React.memo(({ item, onPress }: { item: Reservation; onPr
 
       <View style={styles.resFooter}>
         <Text style={styles.resPriceTxt}>
-          $ {(item.driver_share ?? item.price)?.toLocaleString('es-CO')} – $ {(item.estimate ?? item.price)?.toLocaleString('es-CO')}
+          {formatBookingFareRange(item)}
         </Text>
         <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.4)" />
       </View>
@@ -361,9 +362,10 @@ const ReservationsScreen = () => {
 
       {/* Header — sin botón volver: esta pantalla es destino del tab bar */}
       <View style={[styles.header, { paddingTop: topPad }]}>
-        <View style={styles.headerSpacer} />
-        <Text style={styles.headerTitle}>Tus Reservas</Text>
-        <View style={styles.headerSpacer} />
+        <View style={styles.headerTitleWrap}>
+          <Text style={styles.headerEyebrow}>T+plus</Text>
+          <Text style={styles.headerTitle}>Tus Reservas</Text>
+        </View>
       </View>
 
       {/* Tabs */}
@@ -510,8 +512,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(5,26,38,0.82)',
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.08)',
   },
+  headerTitleWrap: { flex: 1 },
+  headerEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00E5FF',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.3 },
-  headerSpacer: { width: 40 },
 
   // Tabs
   tabsScroll: { flexGrow: 0 },

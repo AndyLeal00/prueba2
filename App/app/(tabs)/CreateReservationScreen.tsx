@@ -1232,18 +1232,18 @@ const CreateReservationScreen = () => {
             </View>
           </Animatable.View>
 
-          {/* Prices */}
+          {/* Prices — mismo rango para conductor y cliente */}
           <Animatable.View animation="fadeInUp" duration={250} delay={80} useNativeDriver>
             <Text style={st.label}>
-              Valor Estimado ⚡ (Dinámico)
+              Valor Estimado ⚡ (mismo rango conductor / cliente)
             </Text>
             <View style={st.priceRow}>
               <View style={st.priceCard}>
-                <Text style={st.priceLbl}>Desde</Text>
+                <Text style={st.priceLbl}>Desde (mín)</Text>
                 <Text style={st.priceAmt}>$ {(driverPrice || 0).toLocaleString('es-CO')}</Text>
               </View>
               <View style={st.priceCard}>
-                <Text style={st.priceLbl}>Hasta</Text>
+                <Text style={st.priceLbl}>Hasta (máx)</Text>
                 <Text style={st.priceAmt}>$ {(clientPrice || 0).toLocaleString('es-CO')}</Text>
               </View>
             </View>

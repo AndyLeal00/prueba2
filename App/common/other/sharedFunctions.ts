@@ -320,9 +320,25 @@ export const addActualsToBooking = async (
     const pickupLng = parseFloat(booking.pickup?.lng ?? booking.pickup_lng);
     const dropLat = parseFloat(booking.drop?.lat ?? booking.drop_lat);
     const dropLng = parseFloat(booking.drop?.lng ?? booking.drop_lng);
+    // Aeropuerto: origen o destino ≤1 km de un punto en airports.json
+    // → suma car_types.delta_aeropuerto (fallback 12k).
     const oAir = !isNaN(pickupLat) && !isNaN(pickupLng) ? isNearAirport(pickupLat, pickupLng) : null;
     const dAir = !isNaN(dropLat) && !isNaN(dropLng) ? isNearAirport(dropLat, dropLng) : null;
     const isAirport = !!(oAir || dAir);
+    if (isAirport) {
+      console.log('[addActualsToBooking] Delta aeropuerto ON:', oAir || dAir, {
+        pickup: [pickupLat, pickupLng],
+        drop: [dropLat, dropLng],
+      });
+    }
+
+    // Reserva programada: booking_type reservation / bookLater / caller.
+    const bookingType = String(booking.booking_type || booking.bookingType || '').toLowerCase();
+    const isScheduledResolved =
+      extraFareContext.isScheduled === true ||
+      booking.bookLater === true ||
+      bookingType.includes('reserv');
+
     const isIntermunicipal = distance > DEFAULT_UMBRAL_INTERMUNICIPAL_KM;
 
     const { totalCost, grandTotal, convenience_fees } = FareCalculator(
@@ -331,7 +347,12 @@ export const addActualsToBooking = async (
       rates,
       null,
       settings.decimal,
-      { isAirport, isIntermunicipal, ...extraFareContext }
+      {
+        isAirport,
+        isIntermunicipal,
+        ...extraFareContext,
+        isScheduled: isScheduledResolved,
+      }
     );
 
     console.log('Tarifas calculadas:', { totalCost, grandTotal, convenience_fees });
@@ -348,13 +369,8 @@ export const addActualsToBooking = async (
       );
     }
 
-    // Precio cliente AL FINALIZAR: alineado 1:1 con el precio conductor —
-    // sin margen acá (el margen del 25% solo aplica al PRONÓSTICO inicial,
-    // ver `MARGEN_CLIENTE` en `constants/fare.ts`). El piso ya está puesto
-    // en `finalCost` (nunca por debajo del mínimo cotizado al crear la
-    // reserva) — el cliente paga exactamente lo mismo que recibe el
-    // conductor al cierre del servicio, ese valor o superior si el viaje
-    // real salió más largo.
+    // Precio al finalizar: mismo valor para cliente y conductor (sin margen
+    // de rango). El piso ya está en finalCost.
     const finalClientCost = finalCost;
 
     booking.drop = { add: booking.drop?.add, lat: booking.drop?.lat, lng: booking.drop?.lng };

@@ -10,11 +10,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { AntDesign, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
 import { useDispatch, useSelector } from "react-redux";
-import supabase, { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/config/SupabaseConfig";
+import supabase, { SUPABASE_URL, SUPABASE_ANON_KEY, getSupabaseAuthHeaders } from "@/config/SupabaseConfig";
 import { RootState } from "@/common/store";
 import { settings } from "@/scripts/settings";
 import { logout } from "@/common/reducers/authReducer";
@@ -26,6 +28,23 @@ import { useDriverNavBottomPad, useIsDriverUser } from '@/components/DriverBotto
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as TaskManager from "expo-task-manager";
 import * as Location from "expo-location";
+import { fetchAndSyncUserRating } from '@/common/utils/userRating';
+
+const emptyProfile = {
+  firstName: null as string | null,
+  lastName: null as string | null,
+  mobile: null as string | null,
+  documentType: null as string | null,
+  documentNumber: null as string | null,
+  userType: null as string | null,
+  referredByCode: null as string | null,
+  referralId: null as string | null,
+  rating: null as number | null,
+  ratingCount: 0,
+  userRowId: null as string | null,
+  profileImage: null as string | null,
+  completedTrips: 0,
+};
 
 type Props = NativeStackScreenProps<any>;
 
@@ -38,6 +57,49 @@ type PickerItem = {
 };
 
 const BG_IMAGE = require("../../assets/images/bg.png");
+
+const LiquidGlass = ({
+  style,
+  children,
+}: {
+  style?: object;
+  children: React.ReactNode;
+}) => (
+  <View style={[styles.glassOuter, style]}>
+    <BlurView
+      intensity={Platform.OS === "ios" ? 38 : 60}
+      tint="dark"
+      experimentalBlurMethod={Platform.OS === "android" ? "dimezisBlurView" : undefined}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <LinearGradient
+      pointerEvents="none"
+      colors={[
+        "rgba(0,28,48,0.55)",
+        "rgba(0,20,39,0.62)",
+        "rgba(0,16,32,0.72)",
+        "rgba(0,24,44,0.5)",
+      ]}
+      locations={[0, 0.35, 0.75, 1]}
+      start={{ x: 0.15, y: 0 }}
+      end={{ x: 0.9, y: 1 }}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <LinearGradient
+      pointerEvents="none"
+      colors={[
+        "rgba(0,40,70,0.35)",
+        "rgba(0,20,39,0.0)",
+        "rgba(0,20,39,0.0)",
+        "rgba(0,30,55,0.22)",
+      ]}
+      locations={[0, 0.2, 0.82, 1]}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={styles.glassRim} pointerEvents="none" />
+    <View style={styles.glassContent}>{children}</View>
+  </View>
+);
 
 const ProfileScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
@@ -58,27 +120,7 @@ const ProfileScreen = ({ navigation }: Props) => {
     setAlertButtons(buttons || [{ text: 'OK', onPress: () => setAlertVisible(false) }]);
     setAlertVisible(true);
   };
-  const [dbProfile, setDbProfile] = useState<{
-    firstName: string | null;
-    lastName: string | null;
-    mobile: string | null;
-    documentType: string | null;
-    documentNumber: string | null;
-    userType: string | null;
-    referredByCode: string | null;
-    referralId: string | null;
-    rating: number | null;
-  }>({
-    firstName: null,
-    lastName: null,
-    mobile: null,
-    documentType: null,
-    documentNumber: null,
-    userType: null,
-    referredByCode: null,
-    referralId: null,
-    rating: null,
-  });
+  const [dbProfile, setDbProfile] = useState({ ...emptyProfile });
   // Código de referido PROPIO (AAA-XXXXX) + conteo. null = aún generándose.
   const [ownReferral, setOwnReferral] = useState<DriverReferralCode | null>(null);
   const currentUserType = String(
@@ -102,12 +144,12 @@ const ProfileScreen = ({ navigation }: Props) => {
     const fetchProfileData = async () => {
       const authId = user?.id || user?.auth_id;
       if (!authId) {
-        if (!cancelled) setDbProfile({ firstName: null, lastName: null, mobile: null, documentType: null, documentNumber: null, userType: null, referredByCode: null, referralId: null, rating: null });
+        if (!cancelled) setDbProfile({ ...emptyProfile });
         return;
       }
 
       try {
-        const url = `${SUPABASE_URL}/rest/v1/users?or=(auth_id.eq.${encodeURIComponent(authId)},id.eq.${encodeURIComponent(authId)})&select=first_name,last_name,mobile,document_type,document_number,user_type,referred_by_code,referral_id,rating&limit=1`;
+        const url = `${SUPABASE_URL}/rest/v1/users?or=(auth_id.eq.${encodeURIComponent(authId)},id.eq.${encodeURIComponent(authId)})&select=id,first_name,last_name,mobile,document_type,document_number,user_type,referred_by_code,referral_id,rating,profile_image&limit=1`;
         const response = await fetch(url, {
           method: 'GET',
           headers: {
@@ -123,6 +165,56 @@ const ProfileScreen = ({ navigation }: Props) => {
 
         if (Array.isArray(data) && data.length > 0) {
           const p = data[0];
+          const rowId = String(p.id || '');
+          const roleRaw = String(p.user_type || '').toLowerCase();
+          const role = roleRaw === 'driver' ? 'driver' : 'customer';
+
+          let rating: number | null =
+            p.rating !== null && p.rating !== undefined ? Number(p.rating) : null;
+          let ratingCount = 0;
+          let completedTrips = 0;
+
+          // Recalcular desde bookings (users.rating suele quedar en 0)
+          if (rowId) {
+            try {
+              const synced = await fetchAndSyncUserRating(rowId, role, { syncToProfile: true });
+              ratingCount = synced.count;
+              rating = synced.count > 0 ? synced.average : null;
+            } catch (e) {
+              console.warn('[Profile] sync rating failed:', e);
+              if (rating === 0) rating = null;
+            }
+
+            // Viajes COMPLETE/PAID (reservas + inmediatos)
+            try {
+              const authHeaders = await getSupabaseAuthHeaders();
+              const idFilter =
+                role === 'driver'
+                  ? `or=(driver_id.eq.${encodeURIComponent(rowId)},driver.eq.${encodeURIComponent(rowId)})`
+                  : `or=(customer_id.eq.${encodeURIComponent(rowId)},customer.eq.${encodeURIComponent(rowId)})`;
+              const countUrl =
+                `${SUPABASE_URL}/rest/v1/bookings?${idFilter}` +
+                `&status=in.(COMPLETE,PAID)&select=id`;
+              const countRes = await fetch(countUrl, {
+                method: 'GET',
+                headers: {
+                  ...authHeaders,
+                  Prefer: 'count=exact',
+                  Range: '0-0',
+                },
+                signal: controller.signal,
+              });
+              if (countRes.ok) {
+                const range = countRes.headers.get('content-range') || '';
+                const totalPart = range.split('/')[1];
+                const n = Number(totalPart);
+                completedTrips = Number.isFinite(n) && n >= 0 ? n : 0;
+              }
+            } catch (e) {
+              console.warn('[Profile] completed trips count failed:', e);
+            }
+          }
+
           if (!cancelled) {
             setDbProfile({
               firstName: p.first_name || null,
@@ -133,13 +225,17 @@ const ProfileScreen = ({ navigation }: Props) => {
               userType: p.user_type || null,
               referredByCode: p.referred_by_code || null,
               referralId: p.referral_id || null,
-              rating: p.rating !== null && p.rating !== undefined ? Number(p.rating) : null,
+              rating,
+              ratingCount,
+              userRowId: rowId || null,
+              profileImage: p.profile_image || null,
+              completedTrips,
             });
           }
         }
       } catch (e: any) {
         if (!cancelled && e?.name !== 'AbortError') {
-          setDbProfile({ firstName: null, lastName: null, mobile: null, documentType: null, documentNumber: null, userType: null, referredByCode: null, referralId: null, rating: null });
+          setDbProfile({ ...emptyProfile });
         }
       }
     };
@@ -401,122 +497,182 @@ const ProfileScreen = ({ navigation }: Props) => {
   const isCustomer = currentUserType === "customer";
   const isDriverUser = useIsDriverUser();
   const hideNavBack = isCustomer || isDriverUser;
-  const centerHeader = isCustomer;
   const headerTopPadding = Platform.OS === "android" ? Math.max(insets.top, 10) + 8 : 10;
   const customerNavPad = useCustomerNavBottomPad();
   const driverNavPad = useDriverNavBottomPad();
   const navBottomPad = isCustomer ? customerNavPad : isDriverUser ? driverNavPad : 36;
 
+  const profilePhoto =
+    dbProfile.profileImage ||
+    (user as any)?.profile_image ||
+    profile?.profile_image ||
+    null;
+
   return (
     <View style={styles.container}>
       <Image source={BG_IMAGE} style={styles.bgImage} resizeMode="cover" />
       <View pointerEvents="none" style={styles.bgOverlay} />
-      {/* Eliminado: círculos/ellipses de fondo (bgGlowTop y bgGlowBottom) */}
 
-      <View style={[styles.headerArea, centerHeader && styles.headerAreaCentered, { paddingTop: isDriverUser ? headerTopPadding : Math.max(insets.top, 12) + 8 }]}>
+      <View style={[styles.headerArea, { paddingTop: headerTopPadding }]}>
         {!hideNavBack && (
           <TouchableOpacity style={styles.headerBackBtn} onPress={goBackFromProfile} activeOpacity={0.85}>
-            <Ionicons name="arrow-back" size={20} color="#00E5FF" />
+            <Ionicons name="arrow-back" size={18} color="#00E5FF" />
           </TouchableOpacity>
         )}
-        {isDriverUser ? (
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerEyebrow}>T+plus</Text>
-            <Text style={styles.headerTitle}>Mi Perfil</Text>
-          </View>
-        ) : (
+        <View style={styles.headerTitleWrap}>
+          <Text style={styles.headerEyebrow}>T+plus</Text>
           <Text style={styles.headerTitle}>Mi Perfil</Text>
-        )}
+        </View>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.contentArea, { paddingBottom: navBottomPad + 36 }]}
+        contentContainerStyle={[styles.contentArea, { paddingBottom: navBottomPad + 28 }]}
       >
         <View style={styles.userCard}>
-          <View style={styles.avatarRing}>
-            {(user as any)?.profile_image ? (
-              <Image source={{ uri: user.profile_image }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarFallback}>
-                <Ionicons name="person-outline" size={28} color="#00E5FF" />
-              </View>
-            )}
+          <View pointerEvents="none" style={styles.userCardBlotches}>
+            <View style={[styles.blotch, styles.blotchA]} />
+            <View style={[styles.blotch, styles.blotchB]} />
+            <View style={[styles.blotch, styles.blotchC]} />
+            <View style={[styles.blotch, styles.blotchD]} />
+            <View style={[styles.blotch, styles.blotchE]} />
+            <View style={[styles.blotch, styles.blotchF]} />
           </View>
 
-          <View style={styles.userInfo}>
-            <Text style={styles.profileName}>{`${displayFirstName} ${displayLastName}`.trim()}</Text>
-            <View style={styles.ratingRow}>
-              {[1, 2, 3, 4, 5].map((n) => {
-                const r = dbProfile.rating ?? 0;
-                const filled = n <= Math.round(r);
-                return (
-                  <AntDesign
-                    key={n}
-                    name="star"
-                    size={14}
-                    color={filled ? "#FFB300" : "rgba(255,255,255,0.25)"}
-                    style={{ marginRight: 2 }}
-                  />
-                );
-              })}
-              <Text style={styles.ratingText}>
-                {dbProfile.rating !== null
-                  ? `${dbProfile.rating.toFixed(1)} / 5`
-                  : "Sin calificaciones"}
-              </Text>
+          <View style={styles.avatarTop}>
+            <View style={styles.avatarWrap}>
+              <View style={styles.avatarRing}>
+                {profilePhoto ? (
+                  <Image source={{ uri: profilePhoto }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Ionicons name="person-outline" size={28} color="#00E5FF" />
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity
+                style={styles.editBtn}
+                onPress={() => navigation.navigate("Docs")}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="create-outline" size={14} color="#051A26" />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.profilePhone}>{displayPhone}</Text>
+
             {displayUserTypeLabel ? (
-              <View style={styles.profileBadgeRow}>
-                <View style={styles.profileBadge}>
-                  <Text style={styles.profileBadgeText}>{displayUserTypeLabel}</Text>
-                </View>
+              <View style={styles.profileBadge}>
+                <Text style={styles.profileBadgeText}>{displayUserTypeLabel}</Text>
               </View>
             ) : null}
-            {displayDocumentType || displayDocumentNumber ? (
-              <Text style={styles.profileMeta} numberOfLines={1}>
-                {displayDocumentType ? `${displayDocumentType} ` : ''}
-                {displayDocumentNumber || 'sin número'}
-              </Text>
-            ) : (
-              <Text style={styles.profileMetaMuted}>Sin documento registrado</Text>
-            )}
-            {displayReferredBy ? (
-              <Text style={styles.profileMetaMuted} numberOfLines={1}>
-                Referido por: {displayReferredBy}
-              </Text>
-            ) : null}
-            {ownReferral ? (
-              <Text style={styles.profileMeta} numberOfLines={1}>
-                Tu código: {ownReferral.referralCode} · {ownReferral.totalReferrals}{' '}
-                {ownReferral.totalReferrals === 1 ? 'referido' : 'referidos'}
-              </Text>
-            ) : (
-              <Text style={styles.profileMetaMuted} numberOfLines={1}>
-                Generando tu código…
-              </Text>
-            )}
+
+            <Text style={styles.profileName} numberOfLines={1}>
+              {`${displayFirstName} ${displayLastName}`.trim()}
+            </Text>
           </View>
 
-          <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate("Docs")} activeOpacity={0.8}>
-            <Ionicons name="create-outline" size={18} color="#00E5FF" />
-          </TouchableOpacity>
+          <View style={styles.glassGrid}>
+            <LiquidGlass style={styles.glassTileHalf}>
+              <View style={styles.glassIconWrap}>
+                <Ionicons name="ribbon-outline" size={14} color="#00E5FF" />
+              </View>
+              <View style={styles.glassStars}>
+                {[1, 2, 3, 4, 5].map((n) => {
+                  const r = dbProfile.ratingCount > 0 ? (dbProfile.rating ?? 0) : 0;
+                  const filled = dbProfile.ratingCount > 0 && n <= Math.round(r);
+                  return (
+                    <Ionicons
+                      key={n}
+                      name={filled ? "star" : "star-outline"}
+                      size={11}
+                      color={filled ? "#00E5FF" : "rgba(255,255,255,0.28)"}
+                    />
+                  );
+                })}
+              </View>
+              <Text style={styles.glassNum}>
+                {dbProfile.ratingCount > 0 && dbProfile.rating != null
+                  ? dbProfile.rating.toFixed(1)
+                  : "—"}
+              </Text>
+              <Text style={styles.glassCaption}>Calificación</Text>
+            </LiquidGlass>
+
+            <LiquidGlass style={styles.glassTileHalf}>
+              <View style={styles.glassIconWrap}>
+                <Ionicons name="car-sport-outline" size={14} color="#00E5FF" />
+              </View>
+              <Text style={styles.glassNum}>{dbProfile.completedTrips}</Text>
+              <Text style={styles.glassCaption}>Viajes Plus</Text>
+            </LiquidGlass>
+
+            <LiquidGlass style={styles.glassTileHalf}>
+              <View style={styles.glassIconWrap}>
+                <Ionicons name="call-outline" size={14} color="#00E5FF" />
+              </View>
+              <Text style={styles.glassValue} numberOfLines={2}>
+                {displayPhone}
+              </Text>
+              <Text style={styles.glassCaption}>Celular</Text>
+            </LiquidGlass>
+
+            <LiquidGlass style={styles.glassTileHalf}>
+              <View style={styles.glassIconWrap}>
+                <Ionicons name="id-card-outline" size={14} color="#00E5FF" />
+              </View>
+              <Text style={styles.glassValue} numberOfLines={2}>
+                {displayDocumentType || displayDocumentNumber
+                  ? `${displayDocumentType ? `${displayDocumentType} ` : ""}${displayDocumentNumber || "—"}`
+                  : "Sin documento"}
+              </Text>
+              <Text style={styles.glassCaption}>Documento</Text>
+            </LiquidGlass>
+
+            <LiquidGlass style={styles.glassTileFull}>
+              <View style={styles.glassIconWrap}>
+                <Ionicons name="gift-outline" size={14} color="#00E5FF" />
+              </View>
+              {ownReferral ? (
+                <>
+                  <Text style={styles.glassValue} numberOfLines={1}>
+                    {ownReferral.referralCode}
+                  </Text>
+                  <Text style={styles.glassCaption} numberOfLines={1}>
+                    {ownReferral.totalReferrals}{" "}
+                    {ownReferral.totalReferrals === 1 ? "referido" : "referidos"}
+                    {displayReferredBy ? ` · por ${displayReferredBy}` : ""}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.glassValue}>…</Text>
+                  <Text style={styles.glassCaption}>Generando tu código</Text>
+                </>
+              )}
+            </LiquidGlass>
+          </View>
         </View>
 
-        <View style={styles.menuList}>
-          {items.map((item) => (
+        <View style={styles.menuCard}>
+          {items.map((item, index) => (
             <TouchableOpacity
               key={item.key}
-              style={styles.menuItem}
-              activeOpacity={0.8}
+              style={[
+                styles.menuItem,
+                index < items.length - 1 ? styles.menuItemBorder : null,
+              ]}
+              activeOpacity={0.75}
               onPress={() => item.onPress()}
             >
-              <View style={styles.menuIconWrap}>
+              <View
+                style={[
+                  styles.menuIconWrap,
+                  item.isSOS ? styles.menuIconWrapSOS : null,
+                ]}
+              >
                 <Ionicons
                   name={item.icon}
-                  size={20}
-                  color={item.isSOS ? "#E91E63" : "rgba(255,255,255,0.72)"}
+                  size={18}
+                  color={item.isSOS ? "#E91E63" : "rgba(0,229,255,0.85)"}
                 />
               </View>
               <Text
@@ -527,22 +683,25 @@ const ProfileScreen = ({ navigation }: Props) => {
               </Text>
               <Ionicons
                 name="chevron-forward"
-                size={18}
-                color={item.isSOS ? "rgba(233,30,99,0.7)" : "rgba(255,255,255,0.35)"}
+                size={16}
+                color={item.isSOS ? "rgba(233,30,99,0.55)" : "rgba(255,255,255,0.28)"}
               />
             </TouchableOpacity>
           ))}
         </View>
 
-        <View style={styles.logoutWrap}>
-          <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
-            <MaterialIcons name="logout" size={18} color="#FFFFFF" />
-            <Text style={styles.logoutText}>{loading ? "Cerrando..." : "Cerrar sesion"}</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          activeOpacity={0.85}
+          onPress={handleLogout}
+        >
+          <MaterialIcons name="logout" size={16} color="#FFFFFF" />
+          <Text style={styles.logoutText}>{loading ? "Cerrando..." : "Cerrar sesión"}</Text>
+        </TouchableOpacity>
 
         <Text style={styles.versionText}>
-          RT {AppConfig.runtime_Version} V {AppConfig.ios_app_version} B {AppConfig.android_app_version}
+          RT {AppConfig.runtime_Version} · V {AppConfig.ios_app_version} · B{" "}
+          {AppConfig.android_app_version}
         </Text>
       </ScrollView>
       <CustomAlert
@@ -564,38 +723,19 @@ const styles = StyleSheet.create({
   },
   bgImage: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.3,
+    opacity: 0.22,
   },
   bgOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5,26,38,0.84)",
-  },
-  bgGlowTop: {
-    position: "absolute",
-    top: -80,
-    right: -80,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: "rgba(0,229,255,0.08)",
-  },
-  bgGlowBottom: {
-    position: "absolute",
-    bottom: 90,
-    left: -90,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "rgba(0,188,212,0.05)",
+    backgroundColor: "rgba(5,26,38,0.82)",
   },
   headerArea: {
-    paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
     flexDirection: "row",
     alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,229,255,0.08)",
-    backgroundColor: "rgba(5,26,38,0.82)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.08)",
   },
   headerTitleWrap: {
     flex: 1,
@@ -607,15 +747,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  headerAreaCentered: {
-    justifyContent: "center",
-  },
   headerBackBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.26)",
     backgroundColor: "rgba(0,229,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
@@ -623,166 +758,280 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.3,
+    fontSize: 16,
+    fontWeight: "600",
+    letterSpacing: -0.2,
   },
   contentArea: {
-    position: "relative",
-    paddingHorizontal: 20,
-    paddingBottom: 36,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
   userCard: {
-    marginTop: 16,
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 22,
+    marginBottom: 10,
+    paddingTop: 14,
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.45)",
-    backgroundColor: "rgba(8,36,48,0.72)",
-    flexDirection: "row",
-    alignItems: "center",
+    borderColor: "rgba(0,229,255,0.16)",
+    backgroundColor: "rgba(8,38,52,0.72)",
     overflow: "hidden",
+    position: "relative",
+  },
+  userCardBlotches: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  blotch: {
+    position: "absolute",
+    borderRadius: 999,
+  },
+  blotchA: {
+    width: 150,
+    height: 150,
+    top: -50,
+    right: -40,
+    backgroundColor: "rgba(0,229,255,0.22)",
+  },
+  blotchB: {
+    width: 100,
+    height: 100,
+    top: 30,
+    left: -36,
+    backgroundColor: "rgba(0,176,255,0.18)",
+  },
+  blotchC: {
+    width: 78,
+    height: 58,
+    top: 88,
+    right: 18,
+    borderRadius: 40,
+    backgroundColor: "rgba(125,211,252,0.16)",
+    transform: [{ rotate: "28deg" }],
+  },
+  blotchD: {
+    width: 120,
+    height: 76,
+    bottom: -30,
+    left: 34,
+    borderRadius: 50,
+    backgroundColor: "rgba(0,229,255,0.14)",
+    transform: [{ rotate: "-18deg" }],
+  },
+  blotchE: {
+    width: 52,
+    height: 52,
+    bottom: 34,
+    right: -12,
+    backgroundColor: "rgba(103,232,249,0.16)",
+  },
+  blotchF: {
+    width: 64,
+    height: 36,
+    top: 10,
+    left: 70,
+    borderRadius: 28,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    transform: [{ rotate: "12deg" }],
+  },
+  avatarTop: {
+    alignItems: "center",
+    marginBottom: 12,
+    zIndex: 1,
+  },
+  avatarWrap: {
+    width: 68,
+    height: 68,
+    marginBottom: 8,
   },
   avatarRing: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     padding: 2,
-    marginRight: 14,
-    backgroundColor: "#00E5FF",
+    backgroundColor: "rgba(0,229,255,0.55)",
   },
   avatarImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 33,
+    borderRadius: 30,
   },
   avatarFallback: {
     flex: 1,
-    borderRadius: 33,
+    borderRadius: 30,
     backgroundColor: "#0A2E3D",
     alignItems: "center",
     justifyContent: "center",
   },
-  userInfo: {
-    flex: 1,
-  },
   profileName: {
-    fontSize: 18,
+    marginTop: 6,
+    fontSize: 15,
     fontWeight: "700",
     color: "#FFFFFF",
-    marginBottom: 3,
-  },
-  profilePhone: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.65)",
-  },
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  ratingText: {
-    marginLeft: 6,
-    fontSize: 12,
-    color: "#FFB300",
-    fontWeight: "600",
-  },
-  profileBadgeRow: {
-    flexDirection: "row",
-    marginTop: 8,
+    textAlign: "center",
+    maxWidth: "100%",
   },
   profileBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     borderRadius: 8,
-    backgroundColor: "#00E5FF",
+    backgroundColor: "rgba(0,229,255,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(0,229,255,0.3)",
   },
   profileBadgeText: {
-    color: "#042029",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.5,
+    color: "#00E5FF",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.4,
     textTransform: "uppercase",
   },
-  profileMeta: {
-    marginTop: 6,
-    fontSize: 12,
-    color: "rgba(255,255,255,0.62)",
-    fontWeight: "500",
+  glassGrid: {
+    zIndex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 8,
   },
-  profileMetaMuted: {
-    marginTop: 4,
-    fontSize: 11,
-    color: "rgba(255,255,255,0.45)",
-    fontStyle: "italic",
+  glassOuter: {
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(0,80,120,0.35)",
+    backgroundColor: "rgba(0,20,39,0.58)",
   },
-  editBtn: {
-    width: 36,
-    height: 36,
+  glassRim: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.55)",
-    backgroundColor: "rgba(0,229,255,0.08)",
+    borderColor: "rgba(0,60,95,0.22)",
+  },
+  glassContent: {
+    zIndex: 2,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-  menuList: {
-    marginTop: 2,
+  glassTileHalf: {
+    width: "48.5%",
+    minHeight: 96,
+  },
+  glassTileFull: {
+    width: "100%",
+  },
+  glassIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+    backgroundColor: "rgba(0,229,255,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(0,229,255,0.32)",
+  },
+  glassStars: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 1,
+    marginBottom: 3,
+  },
+  glassNum: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  glassValue: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    textAlign: "center",
+    lineHeight: 14,
+  },
+  glassCaption: {
+    marginTop: 3,
+    fontSize: 10,
+    fontWeight: "600",
+    color: "rgba(200,240,255,0.7)",
+    textAlign: "center",
+  },
+  editBtn: {
+    position: "absolute",
+    right: -1,
+    bottom: -1,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#00E5FF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#0A2E3D",
+  },
+  menuCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0,229,255,0.12)",
+    backgroundColor: "rgba(10,46,61,0.55)",
+    overflow: "hidden",
+    marginBottom: 10,
   },
   menuItem: {
-    minHeight: 54,
-    marginBottom: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: "rgba(10,28,38,0.88)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     flexDirection: "row",
     alignItems: "center",
   },
+  menuItemBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(0,229,255,0.1)",
+  },
   menuIconWrap: {
-    width: 28,
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
+    backgroundColor: "rgba(0,229,255,0.08)",
+  },
+  menuIconWrapSOS: {
+    backgroundColor: "rgba(233,30,99,0.1)",
   },
   menuText: {
     flex: 1,
-    color: "rgba(255,255,255,0.88)",
-    fontSize: 15,
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 13,
     fontWeight: "500",
   },
   menuTextSOS: {
     color: "#E91E63",
     fontWeight: "600",
   },
-  logoutWrap: {
-    marginTop: 12,
-    marginHorizontal: 4,
-  },
   logoutBtn: {
-    height: 50,
-    borderRadius: 25,
+    height: 46,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.85)",
-    backgroundColor: "transparent",
+    borderColor: "rgba(255,255,255,0.28)",
+    backgroundColor: "rgba(255,255,255,0.04)",
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
   },
   logoutText: {
     marginLeft: 8,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "700",
     color: "#FFFFFF",
   },
   versionText: {
-    marginTop: 18,
+    marginTop: 14,
     textAlign: "center",
-    color: "rgba(255,255,255,0.45)",
-    fontSize: 12,
+    color: "rgba(255,255,255,0.35)",
+    fontSize: 11,
   },
 });
 

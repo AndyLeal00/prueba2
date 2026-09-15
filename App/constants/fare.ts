@@ -1,30 +1,92 @@
 /**
  * Constantes oficiales del modelo de tarifas TmasPlus.
  *
- * Alineadas con `Base para Agente T+Plus.xlsm` (Tabla Tarifas),
- * Agente/backendRemoto/src/domains/booking/tarifa/ y
- * AplicacionWebTmasplus/.../utils/fareConstants.ts.
+ * Fallbacks cuando la fila de categoría en `car_types` no trae
+ * delta_aeropuerto / delta_aeropuerto_prog.
  *
- * Cada concepto es un valor independiente. Si dos aplican (ej. aeropuerto +
- * programado), se SUMAN naturalmente en el subtotal. No se usa
- * `delta_aeropuerto_prog` pre-calculado: confunde y obliga a ramas
- * condicionales.
+ * Cada concepto es independiente. Si dos aplican (aeropuerto + programado),
+ * se SUMAN. `delta_aeropuerto_prog` en BD es el delta de PROGRAMADO solo
+ * (nombre histórico; no es aero+prog pre-sumado).
  */
 
-export const DELTA_AEROPUERTO = 12_000; // viaje desde/hacia aeropuerto
-export const DELTA_PROGRAMADO = 4_800;  // reserva programada (cualquier hora)
-export const DELTA_PROTOCOLO = 5_000;   // servicio con protocolo
+/** Fallback si `car_types.delta_aeropuerto` no viene en rateDetails. */
+export const DELTA_AEROPUERTO = 12_000;
+/** Fallback si `car_types.delta_aeropuerto_prog` no viene (delta PROGRAMADO). */
+export const DELTA_PROGRAMADO = 4_800;
+export const DELTA_PROTOCOLO = 5_000;
 
-// Margen Erixon (plataforma) sobre el valor conductor → valor cliente.
-// Usado SOLO para el PRONÓSTICO inicial (rango mínimo-máximo mostrado al
-// cliente al cotizar/durante el viaje) — NO para el precio final al
-// completar el servicio, ver `addActualsToBooking` en
-// `common/other/sharedFunctions.ts`, que iguala cliente=conductor al
-// finalizar sin este margen. Revertido a 0.25 el 2026-07-04 tras un primer
-// intento fallido de apagarlo globalmente que rompió el rango del
-// pronóstico — ver [[10-deuda-tecnica]] #35 y [[21-calculo-tarifa]].
+/**
+ * Margen del rango de cotización: max = min × (1 + MARGEN) = min / 0.8.
+ * Solo para el máximo del pronóstico (min–max). Al cierre no aplica:
+ * cliente y conductor reciben el mismo valor mínimo recalculado.
+ */
 export const MARGEN_CLIENTE = 0.25;
 
-// Umbral default para clasificar urbano vs intermunicipal cuando la categoría
-// no trae `umbral_intermunicipal_km` en BD.
 export const DEFAULT_UMBRAL_INTERMUNICIPAL_KM = 29;
+
+/** Redondeo a centena hacia arriba. */
+export const roundUpToHundred = (n: number): number =>
+  Math.ceil(Number(n) / 100) * 100;
+
+/**
+ * Máximo del rango a partir del mínimo conductor.
+ * max = ROUNDUP(min × 1.25, centena) ≡ ROUNDUP(min / 0.8, centena).
+ */
+export const maxFromMinConductor = (minConductor: number): number =>
+  roundUpToHundred(Number(minConductor) * (1 + MARGEN_CLIENTE));
+
+/**
+ * Rango unificado a mostrar en UI (conductor y cliente).
+ * Cotización / en curso: min = trip_cost|driver_share, max = estimate|price.
+ * COMPLETE: un solo valor (price|trip_cost|estimate).
+ */
+export function getBookingFareRange(booking: any): {
+  min: number;
+  max: number;
+  isComplete: boolean;
+} {
+  const status = String(booking?.status || '').toUpperCase();
+  const isComplete =
+    status === 'COMPLETE' ||
+    status === 'COMPLETED' ||
+    status === 'PAID';
+
+  const num = (v: any) => {
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
+  if (isComplete) {
+    const final =
+      num(booking?.price) ||
+      num(booking?.trip_cost) ||
+      num(booking?.driver_share) ||
+      num(booking?.estimate);
+    return { min: final, max: final, isComplete: true };
+  }
+
+  const min =
+    num(booking?.trip_cost) ||
+    num(booking?.driver_share) ||
+    num(booking?.price) ||
+    num(booking?.estimate);
+  const max =
+    num(booking?.estimate) ||
+    num(booking?.price) ||
+    min;
+  return {
+    min,
+    max: max >= min ? max : min,
+    isComplete: false,
+  };
+}
+
+/** Texto `$ min - $ max` o `$ final` si ya cerró. */
+export function formatBookingFareRange(booking: any): string {
+  const { min, max, isComplete } = getBookingFareRange(booking);
+  if (!min && !max) return '$ 0';
+  if (isComplete || min === max) {
+    return `$ ${min.toLocaleString('es-CO')}`;
+  }
+  return `$ ${min.toLocaleString('es-CO')} - $ ${max.toLocaleString('es-CO')}`;
+}
