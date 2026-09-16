@@ -11,8 +11,6 @@ import {
   View,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
 import { useDispatch, useSelector } from "react-redux";
@@ -56,6 +54,11 @@ type PickerItem = {
   isSOS?: boolean;
 };
 
+type MenuSection = {
+  title: string;
+  items: PickerItem[];
+};
+
 const BG_IMAGE = require("../../assets/images/bg.png");
 
 const LiquidGlass = ({
@@ -66,37 +69,6 @@ const LiquidGlass = ({
   children: React.ReactNode;
 }) => (
   <View style={[styles.glassOuter, style]}>
-    <BlurView
-      intensity={Platform.OS === "ios" ? 38 : 60}
-      tint="dark"
-      experimentalBlurMethod={Platform.OS === "android" ? "dimezisBlurView" : undefined}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <LinearGradient
-      pointerEvents="none"
-      colors={[
-        "rgba(0,28,48,0.55)",
-        "rgba(0,20,39,0.62)",
-        "rgba(0,16,32,0.72)",
-        "rgba(0,24,44,0.5)",
-      ]}
-      locations={[0, 0.35, 0.75, 1]}
-      start={{ x: 0.15, y: 0 }}
-      end={{ x: 0.9, y: 1 }}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <LinearGradient
-      pointerEvents="none"
-      colors={[
-        "rgba(0,40,70,0.35)",
-        "rgba(0,20,39,0.0)",
-        "rgba(0,20,39,0.0)",
-        "rgba(0,30,55,0.22)",
-      ]}
-      locations={[0, 0.2, 0.82, 1]}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <View style={styles.glassRim} pointerEvents="none" />
     <View style={styles.glassContent}>{children}</View>
   </View>
 );
@@ -454,37 +426,73 @@ const ProfileScreen = ({ navigation }: Props) => {
     Linking.openURL("https://tmasplus.com/beneficios").catch(() => {});
   }, []);
 
-  const baseItems: PickerItem[] = useMemo(
-    () => [
-      { key: "profile-config", label: "Configuracion de perfil", icon: "settings-outline", onPress: () => navigation.navigate("Docs") },
-      { key: "change-password", label: "Cambiar contraseña", icon: "lock-closed-outline", onPress: () => navigation.navigate("ChangePassword") },
-      { key: "security-contact", label: "Contacto de seguridad", icon: "people-outline", onPress: () => navigation.navigate("SecurityContact") },
-      { key: "shared-trip", label: "Viaje Compartido", icon: "navigate-outline", onPress: () => navigation.navigate("ReceiveLocation") },
-      { key: "chat", label: "Chat con tmasplus", icon: "chatbubble-ellipses-outline", onPress: () => navigation.navigate("Soporte") },
-      { key: "benefits", label: "Beneficios", icon: "gift-outline", onPress: benefits },
-      { key: "share", label: "Comparte y gana", icon: "share-social-outline", onPress: refer },
-      { key: "sos", label: "S.O.S Emergencia", icon: "warning-outline", onPress: sos, isSOS: true },
-      { key: "complaints", label: "Quejas y reclamos", icon: "help-buoy-outline", onPress: () => navigation.navigate("Complain") },
-    ],
-    [benefits, navigation, refer, sos]
-  );
+  const menuSections: MenuSection[] = useMemo(() => {
+    const sections: MenuSection[] = [
+      {
+        title: "Avanzado",
+        items: [
+          { key: "profile-config", label: "Ajustar Perfil", icon: "settings-outline", onPress: () => navigation.navigate("Docs") },
+          { key: "change-password", label: "Cambiar contraseña", icon: "lock-closed-outline", onPress: () => navigation.navigate("ChangePassword") },
+        ],
+      },
+    ];
 
-  const items = useMemo(() => {
-    const out = [...baseItems];
     if (currentUserType === "customer") {
-      out.splice(1, 0, { key: "saved-places", label: "Mis lugares", icon: "location-outline", onPress: () => navigation.navigate("Search") });
+      sections.push({
+        title: "Lugares",
+        items: [
+          { key: "saved-places", label: "Mis lugares", icon: "location-outline", onPress: () => navigation.navigate("Search") },
+        ],
+      });
     }
+
     if (currentUserType === "driver") {
-      out.splice(1, 0, { key: "carnet", label: "Carnet", icon: "card-outline", onPress: () => navigation.navigate("Carnet") });
-      out.splice(3, 0, { key: "my-vehicles", label: "Mis Vehiculos", icon: "car-outline", onPress: () => navigation.navigate("CarsScreen") });
-      out.push({ key: "insurance", label: "Aseguradora", icon: "shield-checkmark-outline", onPress: () => navigation.navigate("Insurance") });
+      sections.push({
+        title: "Conductor",
+        items: [
+          { key: "carnet", label: "Carnet", icon: "card-outline", onPress: () => navigation.navigate("Carnet") },
+          { key: "my-vehicles", label: "Mis Vehiculos", icon: "car-outline", onPress: () => navigation.navigate("CarsScreen") },
+          { key: "insurance", label: "Aseguradora", icon: "shield-checkmark-outline", onPress: () => navigation.navigate("Insurance") },
+        ],
+      });
     }
-    out.push({ key: "updates", label: "Ver actualizaciones", icon: "refresh-outline", onPress: () => navigation.navigate("Updates") });
-    // Ultima de la lista: es destructiva y no debe quedar al alcance de un
-    // desliz accidental entre opciones cotidianas.
-    out.push({ key: "delete-account", label: "Eliminar cuenta", icon: "trash-outline", onPress: confirmarEliminarCuenta });
-    return out;
-  }, [baseItems, currentUserType, navigation, confirmarEliminarCuenta]);
+
+    sections.push(
+      {
+        title: "Seguridad",
+        items: [
+          { key: "security-contact", label: "Contacto de seguridad", icon: "people-outline", onPress: () => navigation.navigate("SecurityContact") },
+          { key: "shared-trip", label: "Viaje Compartido", icon: "navigate-outline", onPress: () => navigation.navigate("ReceiveLocation") },
+          { key: "sos", label: "S.O.S Emergencia", icon: "warning-outline", onPress: sos, isSOS: true },
+        ],
+      },
+      {
+        title: "Beneficios",
+        items: [
+          { key: "benefits", label: "Beneficios", icon: "gift-outline", onPress: benefits },
+          { key: "share", label: "Comparte y gana", icon: "share-social-outline", onPress: refer },
+        ],
+      },
+      {
+        title: "Soporte",
+        items: [
+          { key: "chat", label: "Chat con tmasplus", icon: "chatbubble-ellipses-outline", onPress: () => navigation.navigate("Soporte") },
+          { key: "complaints", label: "Quejas y reclamos", icon: "help-buoy-outline", onPress: () => navigation.navigate("Complain") },
+        ],
+      },
+      {
+        title: "General",
+        items: [
+          { key: "updates", label: "Ver actualizaciones", icon: "refresh-outline", onPress: () => navigation.navigate("Updates") },
+          // Ultima de la lista: es destructiva y no debe quedar al alcance de un
+          // desliz accidental entre opciones cotidianas.
+          { key: "delete-account", label: "Eliminar cuenta", icon: "trash-outline", onPress: confirmarEliminarCuenta },
+        ],
+      },
+    );
+
+    return sections;
+  }, [benefits, confirmarEliminarCuenta, currentUserType, navigation, refer, sos]);
 
   const goBackFromProfile = () => {
     if (navigation.canGoBack()) {
@@ -652,43 +660,48 @@ const ProfileScreen = ({ navigation }: Props) => {
           </View>
         </View>
 
-        <View style={styles.menuCard}>
-          {items.map((item, index) => (
-            <TouchableOpacity
-              key={item.key}
-              style={[
-                styles.menuItem,
-                index < items.length - 1 ? styles.menuItemBorder : null,
-              ]}
-              activeOpacity={0.75}
-              onPress={() => item.onPress()}
-            >
-              <View
-                style={[
-                  styles.menuIconWrap,
-                  item.isSOS ? styles.menuIconWrapSOS : null,
-                ]}
-              >
-                <Ionicons
-                  name={item.icon}
-                  size={18}
-                  color={item.isSOS ? "#E91E63" : "rgba(0,229,255,0.85)"}
-                />
-              </View>
-              <Text
-                style={[styles.menuText, item.isSOS ? styles.menuTextSOS : null]}
-                numberOfLines={1}
-              >
-                {item.label}
-              </Text>
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={item.isSOS ? "rgba(233,30,99,0.55)" : "rgba(255,255,255,0.28)"}
-              />
-            </TouchableOpacity>
-          ))}
-        </View>
+        {menuSections.map((section) => (
+          <View key={section.title} style={styles.menuSection}>
+            <Text style={styles.menuSectionTitle}>{section.title}</Text>
+            <View style={styles.menuCard}>
+              {section.items.map((item, index) => (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[
+                    styles.menuItem,
+                    index < section.items.length - 1 ? styles.menuItemBorder : null,
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() => item.onPress()}
+                >
+                  <View
+                    style={[
+                      styles.menuIconWrap,
+                      item.isSOS ? styles.menuIconWrapSOS : null,
+                    ]}
+                  >
+                    <Ionicons
+                      name={item.icon}
+                      size={18}
+                      color={item.isSOS ? "#E91E63" : "rgba(0,229,255,0.85)"}
+                    />
+                  </View>
+                  <Text
+                    style={[styles.menuText, item.isSOS ? styles.menuTextSOS : null]}
+                    numberOfLines={1}
+                  >
+                    {item.label}
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={item.isSOS ? "rgba(233,30,99,0.55)" : "rgba(255,255,255,0.28)"}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ))}
 
         <TouchableOpacity
           style={styles.logoutBtn}
@@ -893,20 +906,13 @@ const styles = StyleSheet.create({
     rowGap: 8,
   },
   glassOuter: {
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(0,80,120,0.35)",
-    backgroundColor: "rgba(0,20,39,0.58)",
-  },
-  glassRim: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(0,60,95,0.22)",
+    borderColor: "rgba(0,229,255,0.12)",
+    backgroundColor: "rgba(10,46,61,0.55)",
   },
   glassContent: {
-    zIndex: 2,
     paddingVertical: 11,
     paddingHorizontal: 10,
     alignItems: "center",
@@ -970,13 +976,24 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#0A2E3D",
   },
+  menuSection: {
+    marginBottom: 14,
+  },
+  menuSectionTitle: {
+    marginBottom: 8,
+    marginLeft: 4,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "rgba(220,230,240,0.55)",
+  },
   menuCard: {
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(0,229,255,0.12)",
     backgroundColor: "rgba(10,46,61,0.55)",
     overflow: "hidden",
-    marginBottom: 10,
   },
   menuItem: {
     minHeight: 48,

@@ -1085,13 +1085,42 @@ const ReservationTripScreen = () => {
           </Marker>
         )}
 
-        {/* Route polyline */}
+        {/* Route polyline: borde azul + línea + puntas inicio/fin */}
         {routeCoords.length > 1 && (
-          <Polyline
-            coordinates={routeCoords}
-            strokeWidth={4}
-            strokeColor={phase === 'TRIP_STARTED' ? '#00E676' : '#00E5FF'}
-          />
+          <>
+            <Polyline
+              coordinates={routeCoords}
+              strokeWidth={8}
+              strokeColor="#00E5FF"
+              lineJoin="round"
+              lineCap="round"
+              zIndex={1}
+            />
+            <Polyline
+              coordinates={routeCoords}
+              strokeWidth={5}
+              strokeColor="#00E676"
+              lineJoin="round"
+              lineCap="round"
+              zIndex={2}
+            />
+            <Marker
+              coordinate={routeCoords[0]}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={4}
+            >
+              <View style={s.routeEndpointStart} />
+            </Marker>
+            <Marker
+              coordinate={routeCoords[routeCoords.length - 1]}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={5}
+            >
+              <View style={s.routeEndpointEnd} />
+            </Marker>
+          </>
         )}
       </MapView>
 
@@ -1731,6 +1760,22 @@ const s = StyleSheet.create({
   markerLabel: {
     fontSize: 10, fontWeight: '700', color: '#FFF', marginTop: 2,
     backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+  },
+  routeEndpointStart: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2.5,
+    borderColor: '#00E5FF',
+  },
+  routeEndpointEnd: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#E91E63',
+    borderWidth: 2.5,
+    borderColor: '#00E5FF',
   },
   /* 🆕 Price Card Styles */
   priceCard: {

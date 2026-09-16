@@ -628,40 +628,40 @@ Te confirmo, estos son los datos de tu servicio:
                   longitudeDelta: 0.04,
                 }}
               >
-                <Marker
-                  coordinate={{
-                    latitude: Number(reservation.pickup_lat ?? reservation.pickup?.lat ?? routeCoords[0].latitude),
-                    longitude: Number(reservation.pickup_lng ?? reservation.pickup?.lng ?? routeCoords[0].longitude),
-                  }}
-                  pinColor="#00E5FF"
-                  title="Inicio"
-                  tappable={false}
-                  tracksViewChanges={false}
-                />
-                <Marker
-                  coordinate={{
-                    latitude: Number(
-                      reservation.drop_lat ??
-                        reservation.drop?.lat ??
-                        routeCoords[routeCoords.length - 1].latitude,
-                    ),
-                    longitude: Number(
-                      reservation.drop_lng ??
-                        reservation.drop?.lng ??
-                        routeCoords[routeCoords.length - 1].longitude,
-                    ),
-                  }}
-                  pinColor="#E91E63"
-                  title="Fin"
-                  tappable={false}
-                  tracksViewChanges={false}
-                />
                 <Polyline
                   coordinates={routeCoords}
                   strokeColor="#00E5FF"
-                  strokeWidth={3.5}
+                  strokeWidth={8}
+                  lineJoin="round"
+                  lineCap="round"
                   tappable={false}
+                  zIndex={1}
                 />
+                <Polyline
+                  coordinates={routeCoords}
+                  strokeColor="#00E676"
+                  strokeWidth={5}
+                  lineJoin="round"
+                  lineCap="round"
+                  tappable={false}
+                  zIndex={2}
+                />
+                <Marker
+                  coordinate={routeCoords[0]}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  tracksViewChanges={false}
+                  zIndex={4}
+                >
+                  <View style={s.routeEndpointStart} />
+                </Marker>
+                <Marker
+                  coordinate={routeCoords[routeCoords.length - 1]}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  tracksViewChanges={false}
+                  zIndex={5}
+                >
+                  <View style={s.routeEndpointEnd} />
+                </Marker>
               </MapView>
             </View>
           </Animatable.View>
@@ -1240,4 +1240,20 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   modalSubmitTxt: { color: '#051A26', fontWeight: '700', fontSize: 14 },
+  routeEndpointStart: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2.5,
+    borderColor: '#00E5FF',
+  },
+  routeEndpointEnd: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#E91E63',
+    borderWidth: 2.5,
+    borderColor: '#00E5FF',
+  },
 });

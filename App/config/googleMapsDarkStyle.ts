@@ -1,7 +1,8 @@
 import type { MapStyleElement } from 'react-native-maps';
 
-/** Color gris de calles antes del ajuste — usado en nombres de locales/POI. */
-export const MAP_POI_LABEL_COLOR = '#8a8a8a';
+/** Color gris medio-oscuro para iconos/labels de POI (tiendas, etc.). */
+export const MAP_POI_LABEL_COLOR = '#5A5A5A';
+const MAP_POI_ICON_MUTE = [{ saturation: -100 }, { lightness: -45 }, { visibility: 'on' as const }];
 
 /** Azul marca (#0A2E3D) aclarado hacia gris — calles y vías. */
 const ROAD_LOCAL = '#354F5C';
@@ -35,19 +36,27 @@ export const GOOGLE_MAPS_DARK_STYLE: MapStyleElement[] = [
   { featureType: 'landscape.natural.landcover', elementType: 'geometry', stylers: [{ color: GREEN_LANDCOVER }] },
   { featureType: 'landscape.natural.terrain', elementType: 'geometry', stylers: [{ color: '#245A42' }] },
   { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
-  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'on' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#252F34' }] },
   { featureType: 'poi.business', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
-  { featureType: 'poi.business', elementType: 'labels.icon', stylers: [{ visibility: 'on' }] },
+  { featureType: 'poi.business', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'poi.medical', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
+  { featureType: 'poi.medical', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'poi.school', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
+  { featureType: 'poi.school', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'poi.attraction', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
+  { featureType: 'poi.attraction', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'poi.government', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
+  { featureType: 'poi.government', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'poi.place_of_worship', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
+  { featureType: 'poi.place_of_worship', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'poi.sports_complex', elementType: 'labels.text.fill', stylers: [{ color: MAP_POI_LABEL_COLOR }] },
+  { featureType: 'poi.sports_complex', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: GREEN_PARK }] },
   { featureType: 'poi.park', elementType: 'geometry.fill', stylers: [{ color: GREEN_PARK }] },
-  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#7BC99A' }] },
+  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#6A8A78' }] },
   { featureType: 'poi.park', elementType: 'labels.text.stroke', stylers: [{ color: '#142820' }] },
+  { featureType: 'poi.park', elementType: 'labels.icon', stylers: MAP_POI_ICON_MUTE },
   { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: ROAD_LOCAL }] },
   { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: ROAD_STROKE }] },
   { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#F5F8FA' }] },
