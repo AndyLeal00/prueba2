@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { FIXED_TEXT_PROPS } from '@/common/utils/typography';
@@ -28,14 +27,26 @@ function truncateAddress(value?: string, max = 42): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
+/** Busca el navigator que declare la ruta (stack raíz con ReservationTrip, etc.). */
+function findNavigatorWithRoute(navigation: any, routeName: string): any | null {
+  let current = navigation;
+  let depth = 0;
+  while (current && depth < 8) {
+    const names = current.getState?.()?.routeNames as string[] | undefined;
+    if (names?.includes(routeName)) return current;
+    current = current.getParent?.();
+    depth += 1;
+  }
+  return null;
+}
+
 type BannerCardProps = {
   booking: ActiveTripBannerBooking;
   isDriver: boolean;
+  stackNavigation: any;
 };
 
-function BannerCard({ booking, isDriver }: BannerCardProps) {
-  const navigation = useNavigation<any>();
-
+function BannerCard({ booking, isDriver, stackNavigation }: BannerCardProps) {
   const counterpartName = useMemo(() => {
     if (isDriver) {
       return String(booking.customer_name || 'Cliente').trim() || 'Cliente';
@@ -44,10 +55,20 @@ function BannerCard({ booking, isDriver }: BannerCardProps) {
   }, [booking.customer_name, booking.driver_name, isDriver]);
 
   const photoUri = useMemo(() => {
-    const raw = isDriver ? booking.customer_image : booking.driver_image;
-    const uri = String(raw || '').trim();
-    return uri || null;
-  }, [booking.customer_image, booking.driver_image, isDriver]);
+    const uri = String(
+      booking.counterpart_photo ||
+        (isDriver ? booking.customer_image : booking.driver_image) ||
+        '',
+    ).trim();
+    if (
+      uri.startsWith('http') ||
+      uri.startsWith('file:') ||
+      uri.startsWith('content:')
+    ) {
+      return uri;
+    }
+    return null;
+  }, [booking.counterpart_photo, booking.customer_image, booking.driver_image, isDriver]);
 
   const pickup = truncateAddress(
     (booking.pickup_address as string) || undefined,
@@ -65,21 +86,22 @@ function BannerCard({ booking, isDriver }: BannerCardProps) {
       // ignore
     }
 
-    // Desde el tabBar el navigator local es el de tabs; el stack raíz es el padre.
-    const root =
-      navigation.getParent?.()?.getParent?.() ||
-      navigation.getParent?.() ||
-      navigation;
+    const routeName = isDriver ? 'ReservationTrip' : 'CustomerActiveTrip';
+    const params = isDriver
+      ? { reservation: booking }
+      : { bookingId: booking.id, booking };
 
-    if (isDriver) {
-      root.navigate('ReservationTrip', { reservation: booking });
-    } else {
-      root.navigate('CustomerActiveTrip', {
-        bookingId: booking.id,
-        booking,
-      });
+    // 1) Preferir el navigation del screen HomeScreen (stack raíz).
+    // 2) Si no declara la ruta, subir padres hasta encontrarla.
+    const target =
+      findNavigatorWithRoute(stackNavigation, routeName) || stackNavigation;
+
+    try {
+      target.navigate(routeName, params);
+    } catch (e) {
+      console.warn('[ActiveTripBanner] navigate failed', routeName, e);
     }
-  }, [booking, isDriver, navigation]);
+  }, [booking, isDriver, stackNavigation]);
 
   return (
     <TouchableOpacity
@@ -130,18 +152,27 @@ function BannerCard({ booking, isDriver }: BannerCardProps) {
   );
 }
 
+type Props = {
+  /** Navigation del screen HomeScreen (stack con ReservationTrip / CustomerActiveTrip). */
+  stackNavigation: any;
+};
+
 /**
  * Aviso flotante compacto. Debe montarse DENTRO del slot `tabBar`
  * (junto al bottom nav) para quedar por encima del contenido de las tabs.
  */
-export default function ActiveTripFloatingBanner() {
+export default function ActiveTripFloatingBanner({ stackNavigation }: Props) {
   const { booking, isDriver, hasActiveTrip } = useActiveTripBanner();
 
-  if (!hasActiveTrip || !booking) return null;
+  if (!hasActiveTrip || !booking || !stackNavigation) return null;
 
   return (
     <View style={styles.wrap} pointerEvents="box-none">
-      <BannerCard booking={booking} isDriver={isDriver} />
+      <BannerCard
+        booking={booking}
+        isDriver={isDriver}
+        stackNavigation={stackNavigation}
+      />
     </View>
   );
 }

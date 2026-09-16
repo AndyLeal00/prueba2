@@ -9,13 +9,17 @@ export type ActiveTripBannerBooking = {
   status?: string;
   reference?: string;
   customer?: string;
+  customer_id?: string;
   customer_name?: string;
   customer_image?: string;
+  driver?: string;
   driver_id?: string;
   driver_name?: string;
   driver_image?: string;
   pickup_address?: string;
   drop_address?: string;
+  /** Foto resuelta desde users.profile_image */
+  counterpart_photo?: string | null;
   [key: string]: unknown;
 };
 
@@ -34,6 +38,14 @@ function pickUserType(user: any, profile: any): string {
   )
     .trim()
     .toLowerCase();
+}
+
+function pickHttpPhoto(...candidates: Array<string | null | undefined>): string | null {
+  for (const c of candidates) {
+    const u = String(c || '').trim();
+    if (u.startsWith('http') || u.startsWith('file:') || u.startsWith('content:')) return u;
+  }
+  return null;
 }
 
 async function resolvePublicUserId(
@@ -58,6 +70,30 @@ async function resolvePublicUserId(
   return null;
 }
 
+async function resolveCounterpartPhoto(
+  targetId: string | undefined | null,
+  fallback: string | null,
+  headers: Record<string, string>,
+): Promise<string | null> {
+  if (fallback) return fallback;
+  const id = String(targetId || '').trim();
+  if (!id) return null;
+
+  try {
+    const url =
+      `${SUPABASE_URL}/rest/v1/users` +
+      `?or=(id.eq.${encodeURIComponent(id)},auth_id.eq.${encodeURIComponent(id)})` +
+      `&select=profile_image&limit=1`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const u = Array.isArray(rows) ? rows[0] : null;
+    return pickHttpPhoto(u?.profile_image);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Detecta el viaje activo del conductor o cliente (post-aceptación)
  * para mostrar el banner flotante en las pestañas principales.
@@ -79,7 +115,6 @@ export function useActiveTripBanner() {
   const refresh = useCallback(async () => {
     const idCandidates = candidatesKey.split('|').filter(Boolean);
     if ((!isDriver && !isCustomer) || idCandidates.length === 0) {
-      console.log('[ActiveTripBanner] skip: no role/ids', { userType, isDriver, isCustomer });
       setBooking(null);
       return;
     }
@@ -88,14 +123,11 @@ export function useActiveTripBanner() {
       const headers = await getSupabaseAuthHeaders();
       const uid = await resolvePublicUserId(idCandidates, headers);
       if (!uid) {
-        console.log('[ActiveTripBanner] no public user id resolved');
         setBooking(null);
         return;
       }
 
       const statuses = ACTIVE_STATUSES.map((s) => `"${s}"`).join(',');
-      // Misma convención que NotificationsScreen / CustomerHome (select=*).
-      // Un select con columnas inexistentes hace fallar toda la query en silencio.
       const filter = isDriver
         ? `driver_id=eq.${uid}`
         : `customer=eq.${uid}`;
@@ -113,24 +145,27 @@ export function useActiveTripBanner() {
       const rows = await resp.json();
       const row = Array.isArray(rows) ? rows[0] : null;
 
-      console.log(
-        '[ActiveTripBanner]',
-        isDriver ? 'driver' : 'customer',
-        'uid=',
-        uid,
-        'found=',
-        row ? `${row.reference || row.id} status=${row.status}` : 'none',
-      );
-
       if (row?.id && isActiveTripStatus(row.status)) {
-        setBooking(row);
+        const counterpartId = isDriver
+          ? row.customer || row.customer_id
+          : row.driver_id || row.driver;
+        const fallbackPhoto = pickHttpPhoto(
+          isDriver ? row.customer_image : row.driver_image,
+        );
+        const counterpart_photo = await resolveCounterpartPhoto(
+          counterpartId,
+          fallbackPhoto,
+          headers,
+        );
+
+        setBooking({ ...row, counterpart_photo });
       } else {
         setBooking(null);
       }
     } catch (e) {
       console.warn('[ActiveTripBanner] refresh error', e);
     }
-  }, [isDriver, isCustomer, candidatesKey, userType]);
+  }, [isDriver, isCustomer, candidatesKey]);
 
   useEffect(() => {
     refresh();
@@ -138,7 +173,6 @@ export function useActiveTripBanner() {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  // Canal propio para no chocar con Notifications / CustomerHome
   useEffect(() => {
     const id = booking?.id;
     if (!id) return;
@@ -160,7 +194,11 @@ export function useActiveTripBanner() {
             setBooking(null);
             return;
           }
-          setBooking((prev) => (prev ? { ...prev, ...updated } : updated));
+          setBooking((prev) =>
+            prev
+              ? { ...prev, ...updated, counterpart_photo: prev.counterpart_photo }
+              : updated,
+          );
         },
       )
       .subscribe();

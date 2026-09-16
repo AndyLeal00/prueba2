@@ -1,6 +1,7 @@
 ﻿import React, { useMemo } from "react";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
 import HomeScreen from "@/app/(tabs)/index";
 import ProfileScreen from "@/app/(tabs)/ProfileScreen";
 import WalletScreen from "@/app/(tabs)/WalletDetails";
@@ -44,6 +45,10 @@ const CustomerHomeStack: React.FC = () => {
  * "Viajar" opens CreateReservation (action, not a tab page).
  */
 const CustomerTabNavigator: React.FC = () => {
+  // TabNavigator se monta como screen "HomeScreen" del stack raíz →
+  // este navigation puede abrir ReservationTrip / CustomerActiveTrip.
+  const stackNavigation = useNavigation<any>();
+
   return (
     <View style={styles.customerRoot}>
       <CustomerTabs.Navigator
@@ -51,7 +56,7 @@ const CustomerTabNavigator: React.FC = () => {
         tabBarPosition="bottom"
         tabBar={(props) => (
           <View style={styles.floatingTabBar} pointerEvents="box-none">
-            <ActiveTripFloatingBanner />
+            <ActiveTripFloatingBanner stackNavigation={stackNavigation} />
             <CustomerBottomNav {...props} />
           </View>
         )}
@@ -74,6 +79,8 @@ const CustomerTabNavigator: React.FC = () => {
  * Order: Vehículo ↔ Billetera ↔ GO ↔ Historial ↔ Perfil
  */
 const DriverTabNavigator: React.FC = () => {
+  const stackNavigation = useNavigation<any>();
+
   return (
     <View style={styles.driverRoot}>
       <DriverTabs.Navigator
@@ -81,7 +88,7 @@ const DriverTabNavigator: React.FC = () => {
         tabBarPosition="bottom"
         tabBar={(props) => (
           <View style={styles.floatingTabBar} pointerEvents="box-none">
-            <ActiveTripFloatingBanner />
+            <ActiveTripFloatingBanner stackNavigation={stackNavigation} />
             <DriverBottomNav {...props} />
           </View>
         )}

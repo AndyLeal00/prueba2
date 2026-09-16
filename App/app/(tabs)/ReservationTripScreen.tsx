@@ -36,6 +36,23 @@ import StarRating from 'react-native-star-rating-widget';
 const NEQUI_LOGO_URI = 'https://img.logo.dev/nequi.com.co?token=pk_c_F6FSsGSaKey4lkmcDLNw';
 const DAVIPLATA_LOGO_URI = 'https://img.logo.dev/daviplata.com?token=pk_c_F6FSsGSaKey4lkmcDLNw';
 const ROUTE_LINE_BLUE = '#00E5FF';
+const TIP_BASE_ZOOM = 17;
+
+/** Halo de precisión del conductor (metros), escala con zoom. */
+const accuracyHaloForZoom = (baseMeters: number, zoom: number) => {
+  const levelsOut = Math.max(0, TIP_BASE_ZOOM - zoom);
+  const levelsIn = Math.max(0, zoom - TIP_BASE_ZOOM);
+  const scaled = Math.min(baseMeters, 28) * Math.pow(1.35, levelsOut) / Math.pow(1.55, levelsIn);
+  return Math.min(Math.max(scaled, 6), 60);
+};
+
+/** Puntas inicio/fin: misma lógica dinámica del halo de navegar, tamaño medio. */
+const tipRadiusForZoom = (zoom: number) => {
+  const levelsOut = Math.max(0, TIP_BASE_ZOOM - zoom);
+  const levelsIn = Math.max(0, zoom - TIP_BASE_ZOOM);
+  const scaled = 10 * Math.pow(1.35, levelsOut) / Math.pow(1.55, levelsIn);
+  return Math.min(Math.max(scaled, 6), 26);
+};
 
 const { width, height } = Dimensions.get('window');
 const BG_IMAGE = require('../../assets/images/bg.png');
@@ -163,7 +180,8 @@ const ReservationTripScreen = () => {
   const [areaPulse, setAreaPulse] = useState(0.5);
   const [inAppNav, setInAppNav] = useState(false);
   const [customerPhoto, setCustomerPhoto] = useState<string | null>(null);
-  const [endpointTracks, setEndpointTracks] = useState(true);
+  const [panelHeight, setPanelHeight] = useState(300);
+  const [mapZoom, setMapZoom] = useState(17);
   const mapZoomRef = useRef(17);
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -364,13 +382,6 @@ const ReservationTripScreen = () => {
     load();
     return () => { cancelled = true; };
   }, [reservation?.customer_id, reservation?.customer, reservation?.customer_image]);
-
-  // Android: View markers necesitan tracksViewChanges un momento para pintar
-  useEffect(() => {
-    setEndpointTracks(true);
-    const t = setTimeout(() => setEndpointTracks(false), 800);
-    return () => clearTimeout(t);
-  }, [pickupLat, pickupLng, dropLat, dropLng, phase]);
 
   // Navegación in-app tipo Waze: sigue al conductor con el puck
   useEffect(() => {
@@ -1055,6 +1066,7 @@ const ReservationTripScreen = () => {
     setInAppNav(true);
     if (driverLocation && mapRef.current) {
       mapZoomRef.current = 18;
+      setMapZoom(18);
       mapRef.current.animateCamera(
         {
           center: driverLocation,
@@ -1081,7 +1093,9 @@ const ReservationTripScreen = () => {
   };
 
   const zoomBy = (delta: number) => {
-    mapZoomRef.current = Math.min(21, Math.max(12, mapZoomRef.current + delta));
+    const next = Math.min(21, Math.max(12, mapZoomRef.current + delta));
+    mapZoomRef.current = next;
+    setMapZoom(next);
     if (!mapRef.current) return;
     const center = driverLocation || (pickupLat ? { latitude: pickupLat, longitude: pickupLng } : null);
     if (!center) return;
@@ -1090,11 +1104,31 @@ const ReservationTripScreen = () => {
         center,
         heading: inAppNav ? (driverHeading || 0) : 0,
         pitch: inAppNav ? 45 : 0,
-        zoom: mapZoomRef.current,
+        zoom: next,
       },
       { duration: 250 },
     );
   };
+
+  const syncMapZoom = (cameraZoom?: number, latitudeDelta?: number) => {
+    let z = cameraZoom;
+    if (typeof z !== 'number' || !Number.isFinite(z)) {
+      const d = Number(latitudeDelta);
+      if (Number.isFinite(d) && d > 0) z = Math.log2(360 / d);
+    }
+    if (typeof z === 'number' && Number.isFinite(z)) {
+      const clamped = Math.min(21, Math.max(12, z));
+      if (Math.abs(clamped - mapZoomRef.current) > 0.05) {
+        mapZoomRef.current = clamped;
+        setMapZoom(clamped);
+      }
+    }
+  };
+
+  const tipRadius = tipRadiusForZoom(mapZoom);
+  const haloRadius = accuracyHaloForZoom(driverAccuracy, mapZoom);
+  const showRouteStartTip = phase === 'TRIP_STARTED';
+  const showRouteEndTip = routeCoords.length > 1;
 
   const renderPaymentIcon = (size = 14) => {
     if (paymentMode === 'nequi') {
@@ -1195,13 +1229,21 @@ const ReservationTripScreen = () => {
         customMapStyle={GOOGLE_MAPS_DARK_STYLE}
         rotateEnabled
         pitchEnabled
+        onRegionChangeComplete={(region) => {
+          Promise.resolve(mapRef.current?.getCamera?.())
+            .then((cam: any) => {
+              if (typeof cam?.zoom === 'number') syncMapZoom(cam.zoom);
+              else syncMapZoom(undefined, region.latitudeDelta);
+            })
+            .catch(() => syncMapZoom(undefined, region.latitudeDelta));
+        }}
       >
-        {/* Driver puck + halo parpadeante */}
+        {/* Driver puck + halo parpadeante (radio según zoom) */}
         {driverLocation && (
           <>
             <Circle
               center={driverLocation}
-              radius={driverAccuracy * (0.85 + areaPulse * 0.35)}
+              radius={haloRadius * (0.85 + areaPulse * 0.2)}
               fillColor={`rgba(0, 229, 255, ${0.08 + areaPulse * 0.1})`}
               strokeColor={`rgba(0, 229, 255, ${0.22 + areaPulse * 0.14})`}
               strokeWidth={1}
@@ -1219,7 +1261,7 @@ const ReservationTripScreen = () => {
           </>
         )}
 
-        {/* Route polyline */}
+        {/* Route polyline + puntas dinámicas (misma escala que halo navegar) */}
         {routeCoords.length > 1 && (
           <>
             <Polyline
@@ -1238,53 +1280,55 @@ const ReservationTripScreen = () => {
               lineCap="round"
               zIndex={3}
             />
+            {showRouteStartTip && (
+              <Circle
+                center={routeCoords[0]}
+                radius={tipRadius}
+                fillColor="#FFFFFF"
+                strokeColor="#00E5FF"
+                strokeWidth={2}
+                zIndex={5}
+              />
+            )}
+            {showRouteEndTip && (
+              <Circle
+                center={routeCoords[routeCoords.length - 1]}
+                radius={tipRadius}
+                fillColor="#E91E63"
+                strokeColor="#00E5FF"
+                strokeWidth={2}
+                zIndex={5}
+              />
+            )}
           </>
-        )}
-
-        {/* Marcadores inicio/fin del servicio (siempre pickup/drop) */}
-        {pickupLat != null && pickupLng != null && (
-          <Marker
-            coordinate={{ latitude: pickupLat, longitude: pickupLng }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={endpointTracks}
-            zIndex={6}
-          >
-            <View style={s.routeEndpointStart} />
-          </Marker>
-        )}
-        {dropLat != null && dropLng != null && (
-          <Marker
-            coordinate={{ latitude: dropLat, longitude: dropLng }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={endpointTracks}
-            zIndex={7}
-          >
-            <View style={s.routeEndpointEnd} />
-          </Marker>
         )}
       </MapView>
 
-      {/* Controles zoom / ubicar */}
-      <View style={[s.mapZoomControls, { bottom: Math.max(insets.bottom, 16) + 290 }]} pointerEvents="box-none">
-        <TouchableOpacity style={s.mapCtrlBtn} onPress={() => zoomBy(1)} activeOpacity={0.85}>
-          <Ionicons name="add" size={22} color="#00E5FF" />
-        </TouchableOpacity>
-        <TouchableOpacity style={s.mapCtrlBtn} onPress={() => zoomBy(-1)} activeOpacity={0.85}>
-          <Ionicons name="remove" size={22} color="#00E5FF" />
-        </TouchableOpacity>
-      </View>
-      <View style={[s.mapSideControls, { bottom: Math.max(insets.bottom, 16) + 290 }]} pointerEvents="box-none">
-        <TouchableOpacity
-          style={[s.mapCtrlBtn, inAppNav && s.mapCtrlBtnOn]}
-          onPress={() => (inAppNav ? setInAppNav(false) : startInAppNav())}
-          activeOpacity={0.85}
-        >
-          <Image source={DRIVER_LOCATION_PUCK_IMAGE} style={s.mapCtrlPuck} />
-        </TouchableOpacity>
-        <TouchableOpacity style={s.mapCtrlBtn} onPress={locateOnMap} activeOpacity={0.85}>
-          <Ionicons name="locate" size={20} color="#00E5FF" />
-        </TouchableOpacity>
-      </View>
+      {/* Controles: siempre encima del panel; ocultos en llegada/OTP */}
+      {phase !== 'ARRIVED_AT_PICKUP' && panelHeight < height * 0.65 && (
+        <>
+          <View style={[s.mapZoomControls, { bottom: panelHeight + 14 }]} pointerEvents="box-none">
+            <TouchableOpacity style={s.mapCtrlBtn} onPress={() => zoomBy(1)} activeOpacity={0.85}>
+              <Ionicons name="add" size={22} color="#00E5FF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.mapCtrlBtn} onPress={() => zoomBy(-1)} activeOpacity={0.85}>
+              <Ionicons name="remove" size={22} color="#00E5FF" />
+            </TouchableOpacity>
+          </View>
+          <View style={[s.mapSideControls, { bottom: panelHeight + 14 }]} pointerEvents="box-none">
+            <TouchableOpacity
+              style={[s.mapCtrlBtn, inAppNav && s.mapCtrlBtnOn]}
+              onPress={() => (inAppNav ? setInAppNav(false) : startInAppNav())}
+              activeOpacity={0.85}
+            >
+              <Image source={DRIVER_LOCATION_PUCK_IMAGE} style={s.mapCtrlPuck} />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.mapCtrlBtn} onPress={locateOnMap} activeOpacity={0.85}>
+              <Ionicons name="locate" size={20} color="#00E5FF" />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
       {/* Top bar */}
       <View style={[s.topBar, { paddingTop: Math.max(insets.top, 20) + 6 }]}>
@@ -1338,7 +1382,13 @@ const ReservationTripScreen = () => {
       </View>
 
       {/* Bottom panel */}
-      <View style={[s.bottomPanel, { paddingBottom: Math.max(insets.bottom, 16) + 10 }]}>
+      <View
+        style={[s.bottomPanel, { paddingBottom: Math.max(insets.bottom, 16) + 10 }]}
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0 && Math.abs(h - panelHeight) > 2) setPanelHeight(h);
+        }}
+      >
         {/* Reservation info summary */}
         <View style={s.infoCard}>
           <View style={s.infoRow}>
@@ -1909,10 +1959,9 @@ const s = StyleSheet.create({
     gap: 4,
   },
   priceHighlightText: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '600',
     color: '#00E5FF',
-    letterSpacing: 0.5,
   },
   /* Nav buttons */
   navRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
@@ -2011,6 +2060,28 @@ const s = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#E91E63',
     borderWidth: 2.5,
+    borderColor: '#00E5FF',
+  },
+  tipHitbox: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipDotStart: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#00E5FF',
+  },
+  tipDotEnd: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#E91E63',
+    borderWidth: 2,
     borderColor: '#00E5FF',
   },
   /* 🆕 Price Card Styles */

@@ -231,7 +231,9 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   const [accepting, setAccepting] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<any | null>(null);
   const [detailRouteCoords, setDetailRouteCoords] = useState<LatLng[]>([]);
+  const [detailEndpoints, setDetailEndpoints] = useState<{ start: LatLng; end: LatLng } | null>(null);
   const [detailRouteLoading, setDetailRouteLoading] = useState(false);
+  const [detailMarkerTracks, setDetailMarkerTracks] = useState(true);
   const [customerPhotos, setCustomerPhotos] = useState<Record<string, string>>({});
   const detailMapRef = useRef<MapView | null>(null);
   const [activeCarType, setActiveCarType] = useState<string | null>(null);
@@ -907,6 +909,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   const openServiceDetail = useCallback(async (item: any) => {
     setDetailItem(item);
     setDetailRouteCoords([]);
+    setDetailEndpoints(null);
     const oLat = Number(item?.pickup_lat ?? item?.pickup?.lat);
     const oLng = Number(item?.pickup_lng ?? item?.pickup?.lng);
     const dLat = Number(item?.drop_lat ?? item?.drop?.lat);
@@ -914,40 +917,40 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
     if (!Number.isFinite(oLat) || !Number.isFinite(oLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
       return;
     }
+    const start = { latitude: oLat, longitude: oLng };
+    const end = { latitude: dLat, longitude: dLng };
     setDetailRouteLoading(true);
+
+    const applyRoute = (coords: LatLng[]) => {
+      if (coords.length < 2) return;
+      setDetailMarkerTracks(true);
+      setDetailRouteCoords(coords);
+      setDetailEndpoints({
+        start: coords[0],
+        end: coords[coords.length - 1],
+      });
+      setTimeout(() => {
+        detailMapRef.current?.fitToCoordinates(coords, {
+          edgePadding: { top: 28, right: 28, bottom: 28, left: 28 },
+          animated: false,
+        });
+        setTimeout(() => setDetailMarkerTracks(false), 500);
+      }, 250);
+    };
+
     try {
       if (API_KEY) {
         const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${oLat},${oLng}&destination=${dLat},${dLng}&key=${API_KEY}&language=es`;
         const res = await fetch(url);
         const data = await res.json();
         if (data.routes?.[0]?.overview_polyline?.points) {
-          const coords = decodePolyline(data.routes[0].overview_polyline.points);
-          setDetailRouteCoords(coords);
-          setTimeout(() => {
-            detailMapRef.current?.fitToCoordinates(coords, {
-              edgePadding: { top: 36, right: 36, bottom: 36, left: 36 },
-              animated: false,
-            });
-          }, 120);
+          applyRoute(decodePolyline(data.routes[0].overview_polyline.points));
           return;
         }
       }
-      const fallback = [
-        { latitude: oLat, longitude: oLng },
-        { latitude: dLat, longitude: dLng },
-      ];
-      setDetailRouteCoords(fallback);
-      setTimeout(() => {
-        detailMapRef.current?.fitToCoordinates(fallback, {
-          edgePadding: { top: 36, right: 36, bottom: 36, left: 36 },
-          animated: false,
-        });
-      }, 120);
+      applyRoute([start, end]);
     } catch {
-      setDetailRouteCoords([
-        { latitude: oLat, longitude: oLng },
-        { latitude: dLat, longitude: dLng },
-      ]);
+      applyRoute([start, end]);
     } finally {
       setDetailRouteLoading(false);
     }
@@ -956,6 +959,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   const closeServiceDetail = () => {
     setDetailItem(null);
     setDetailRouteCoords([]);
+    setDetailEndpoints(null);
   };
 
   const renderItem = ({ item, index }: { item: any; index: number }) => {
@@ -1308,7 +1312,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                     <View style={s.modalMapLoading}>
                       <ActivityIndicator color="#00E5FF" />
                     </View>
-                  ) : detailRouteCoords.length > 1 ? (
+                  ) : detailRouteCoords.length > 1 && detailEndpoints ? (
                     <MapView
                       ref={detailMapRef}
                       style={StyleSheet.absoluteFillObject}
@@ -1319,17 +1323,29 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                       pitchEnabled={false}
                       rotateEnabled={false}
                       toolbarEnabled={false}
+                      onMapReady={() => {
+                        detailMapRef.current?.fitToCoordinates(detailRouteCoords, {
+                          edgePadding: { top: 28, right: 28, bottom: 28, left: 28 },
+                          animated: false,
+                        });
+                      }}
                       initialRegion={{
-                        latitude: detailRouteCoords[0].latitude,
-                        longitude: detailRouteCoords[0].longitude,
-                        latitudeDelta: 0.04,
-                        longitudeDelta: 0.04,
+                        latitude: (detailEndpoints.start.latitude + detailEndpoints.end.latitude) / 2,
+                        longitude: (detailEndpoints.start.longitude + detailEndpoints.end.longitude) / 2,
+                        latitudeDelta: Math.max(
+                          Math.abs(detailEndpoints.start.latitude - detailEndpoints.end.latitude) * 1.6,
+                          0.018,
+                        ),
+                        longitudeDelta: Math.max(
+                          Math.abs(detailEndpoints.start.longitude - detailEndpoints.end.longitude) * 1.6,
+                          0.018,
+                        ),
                       }}
                     >
                       <Polyline
                         coordinates={detailRouteCoords}
                         strokeColor={ROUTE_LINE_BLUE}
-                        strokeWidth={8}
+                        strokeWidth={7}
                         lineJoin="round"
                         lineCap="round"
                         zIndex={1}
@@ -1337,20 +1353,31 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                       <Polyline
                         coordinates={detailRouteCoords}
                         strokeColor="#00E676"
-                        strokeWidth={5}
+                        strokeWidth={4}
                         lineJoin="round"
                         lineCap="round"
                         zIndex={2}
                       />
-                      <Marker coordinate={detailRouteCoords[0]} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
-                        <View style={s.routeEndpointStart} />
+                      {/* Puntas en px fijos (no Circle en metros) */}
+                      <Marker
+                        coordinate={detailEndpoints.start}
+                        anchor={{ x: 0.5, y: 0.5 }}
+                        tracksViewChanges={detailMarkerTracks}
+                        zIndex={6}
+                      >
+                        <View style={s.tipHitbox}>
+                          <View style={s.tipDotStart} />
+                        </View>
                       </Marker>
                       <Marker
-                        coordinate={detailRouteCoords[detailRouteCoords.length - 1]}
+                        coordinate={detailEndpoints.end}
                         anchor={{ x: 0.5, y: 0.5 }}
-                        tracksViewChanges={false}
+                        tracksViewChanges={detailMarkerTracks}
+                        zIndex={7}
                       >
-                        <View style={s.routeEndpointEnd} />
+                        <View style={s.tipHitbox}>
+                          <View style={s.tipDotEnd} />
+                        </View>
                       </Marker>
                     </MapView>
                   ) : (
@@ -1721,7 +1748,7 @@ const s = StyleSheet.create({
   },
   modalClientName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#FFF' },
   modalMapWrap: {
-    height: 160,
+    height: 190,
     borderRadius: 14,
     overflow: 'hidden',
     marginBottom: 12,
@@ -1749,6 +1776,32 @@ const s = StyleSheet.create({
   routeEndpointEnd: {
     width: 12, height: 12, borderRadius: 6,
     backgroundColor: '#E91E63', borderWidth: 2.5, borderColor: '#00E5FF',
+  },
+  tipHitbox: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipDotStart: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#00E5FF',
+  },
+  tipDotEnd: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#E91E63',
+    borderWidth: 2,
+    borderColor: '#00E5FF',
+  },
+  destMarkerSm: {
+    width: 22,
+    height: 22,
   },
   modalActions: {
     flexDirection: 'row',
