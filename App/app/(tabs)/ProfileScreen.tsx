@@ -23,6 +23,7 @@ import { getDriverOwnReferralCode, DriverReferralCode } from "@/common/services/
 import CustomAlert, { AlertButton } from '@/components/CustomAlert';
 import { useCustomerNavBottomPad } from '@/components/CustomerBottomNav';
 import { useDriverNavBottomPad, useIsDriverUser } from '@/components/DriverBottomNav';
+import { useActiveTripBanner } from '@/hooks/useActiveTripBanner';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as TaskManager from "expo-task-manager";
 import * as Location from "expo-location";
@@ -508,7 +509,10 @@ const ProfileScreen = ({ navigation }: Props) => {
   const headerTopPadding = Platform.OS === "android" ? Math.max(insets.top, 10) + 8 : 10;
   const customerNavPad = useCustomerNavBottomPad();
   const driverNavPad = useDriverNavBottomPad();
-  const navBottomPad = isCustomer ? customerNavPad : isDriverUser ? driverNavPad : 36;
+  const { hasActiveTrip } = useActiveTripBanner();
+  // Solo cliente usa banner flotante en Perfil; conductor solo en GO.
+  const bannerClearance = isCustomer && hasActiveTrip ? 108 : 0;
+  const navBottomPad = (isCustomer ? customerNavPad : isDriverUser ? driverNavPad : 36) + bannerClearance;
 
   const profilePhoto =
     dbProfile.profileImage ||

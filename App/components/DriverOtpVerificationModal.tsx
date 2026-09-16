@@ -91,15 +91,19 @@ export default function DriverOtpVerificationModal({
               <Text style={styles.label}>Código OTP (4-6 dígitos)</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  style={styles.input}
-                  placeholder="Ingresa el código OTP"
-                  placeholderTextColor="#999"
+                  style={[
+                    styles.input,
+                    enteredOtp.length === 0 ? styles.inputEmpty : styles.inputFilled,
+                  ]}
+                  placeholder="Código OTP"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
                   value={enteredOtp}
                   onChangeText={setEnteredOtp}
                   maxLength={6}
                   keyboardType="numeric"
                   secureTextEntry={!showOtp}
                   editable={!loading}
+                  allowFontScaling={false}
                 />
                 <TouchableOpacity
                   onPress={() => setShowOtp(!showOtp)}
@@ -222,10 +226,18 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    padding: 14,
-    fontSize: 24,
-    fontWeight: 'bold',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     color: '#00f4f5',
+  },
+  inputEmpty: {
+    fontSize: 15,
+    fontWeight: '500',
+    letterSpacing: 0,
+  },
+  inputFilled: {
+    fontSize: 22,
+    fontWeight: '700',
     letterSpacing: 6,
   },
   eyeIcon: {

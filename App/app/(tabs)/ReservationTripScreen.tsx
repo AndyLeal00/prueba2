@@ -37,6 +37,9 @@ const NEQUI_LOGO_URI = 'https://img.logo.dev/nequi.com.co?token=pk_c_F6FSsGSaKey
 const DAVIPLATA_LOGO_URI = 'https://img.logo.dev/daviplata.com?token=pk_c_F6FSsGSaKey4lkmcDLNw';
 const ROUTE_LINE_BLUE = '#00E5FF';
 const TIP_BASE_ZOOM = 17;
+/** Pitch de cámara en navegación in-app (0 = cenital, ~60–70 = 3D marcado). */
+const IN_APP_NAV_PITCH = 65;
+const IN_APP_NAV_ZOOM = 18.5;
 
 /** Halo de precisión del conductor (metros), escala con zoom. */
 const accuracyHaloForZoom = (baseMeters: number, zoom: number) => {
@@ -46,13 +49,18 @@ const accuracyHaloForZoom = (baseMeters: number, zoom: number) => {
   return Math.min(Math.max(scaled, 6), 60);
 };
 
-/** Puntas inicio/fin: misma lógica dinámica del halo de navegar, tamaño medio. */
+/** Puntas inicio/fin: escala con zoom, tope bajo para no tapar calles. */
 const tipRadiusForZoom = (zoom: number) => {
   const levelsOut = Math.max(0, TIP_BASE_ZOOM - zoom);
   const levelsIn = Math.max(0, zoom - TIP_BASE_ZOOM);
-  const scaled = 10 * Math.pow(1.35, levelsOut) / Math.pow(1.55, levelsIn);
-  return Math.min(Math.max(scaled, 6), 26);
+  const scaled = 7 * Math.pow(1.28, levelsOut) / Math.pow(1.55, levelsIn);
+  return Math.min(Math.max(scaled, 5), 14);
 };
+
+const TIP_START_FILL = '#FFFFFF';
+const TIP_END_FILL = 'rgba(244, 143, 177, 0.55)'; // rojo pastel suave
+const TIP_END_STROKE = 'rgba(233, 30, 99, 0.75)';
+const TIP_STROKE = '#00E5FF';
 
 const { width, height } = Dimensions.get('window');
 const BG_IMAGE = require('../../assets/images/bg.png');
@@ -177,8 +185,14 @@ const ReservationTripScreen = () => {
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [driverHeading, setDriverHeading] = useState(0);
   const [driverAccuracy, setDriverAccuracy] = useState(30);
+  const gpsHeadingRef = useRef(-1);
+  const speedMpsRef = useRef(0);
   const [areaPulse, setAreaPulse] = useState(0.5);
   const [inAppNav, setInAppNav] = useState(false);
+  const inAppNavRef = useRef(false);
+  useEffect(() => {
+    inAppNavRef.current = inAppNav;
+  }, [inAppNav]);
   const [customerPhoto, setCustomerPhoto] = useState<string | null>(null);
   const [panelHeight, setPanelHeight] = useState(300);
   const [mapZoom, setMapZoom] = useState(17);
@@ -322,8 +336,16 @@ const ReservationTripScreen = () => {
         loc => {
           const pos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
           setDriverLocation(pos);
-          if (typeof loc.coords.heading === 'number' && loc.coords.heading >= 0) {
-            setDriverHeading(loc.coords.heading);
+          const gpsH = loc.coords.heading;
+          if (typeof gpsH === 'number' && gpsH >= 0) {
+            gpsHeadingRef.current = gpsH;
+            // Fuera de Navegar: solo GPS. En Navegar la brújula manda si vas lento.
+            if (!inAppNavRef.current || (loc.coords.speed ?? 0) >= 1.5) {
+              setDriverHeading(gpsH);
+            }
+          }
+          if (typeof loc.coords.speed === 'number' && loc.coords.speed >= 0) {
+            speedMpsRef.current = loc.coords.speed;
           }
           if (typeof loc.coords.accuracy === 'number' && loc.coords.accuracy > 0) {
             setDriverAccuracy(Math.min(Math.max(loc.coords.accuracy, 12), 120));
@@ -336,6 +358,48 @@ const ReservationTripScreen = () => {
     })();
     return () => { sub?.remove(); };
   }, [pickupLat, pickupLng]);
+
+  // Brújula / orientación del dispositivo en modo Navegar (giro del celular).
+  useEffect(() => {
+    if (!inAppNav) return;
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        sub = await Location.watchHeadingAsync((h) => {
+          if (cancelled) return;
+          const compass =
+            typeof h.trueHeading === 'number' && h.trueHeading >= 0
+              ? h.trueHeading
+              : h.magHeading;
+          if (typeof compass !== 'number' || compass < 0) return;
+
+          // En movimiento rápido preferir rumbo GPS (más estable al manejar).
+          const moving = speedMpsRef.current >= 1.5;
+          const gpsH = gpsHeadingRef.current;
+          const next = moving && gpsH >= 0 ? gpsH : compass;
+
+          setDriverHeading((prev) => {
+            let delta = ((next - prev + 540) % 360) - 180;
+            // Suavizado leve para evitar temblor de brújula
+            if (Math.abs(delta) < 1.5) return prev;
+            const smoothed = prev + delta * 0.45;
+            return ((smoothed % 360) + 360) % 360;
+          });
+        });
+      } catch (e) {
+        console.warn('[ReservationTrip] watchHeadingAsync failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        sub?.remove();
+      } catch {
+        // ignore
+      }
+    };
+  }, [inAppNav]);
 
   // Halo de precisión (mismo efecto parpadeante del mapa principal)
   useEffect(() => {
@@ -390,7 +454,7 @@ const ReservationTripScreen = () => {
       {
         center: driverLocation,
         heading: driverHeading || 0,
-        pitch: 45,
+        pitch: IN_APP_NAV_PITCH,
         zoom: mapZoomRef.current,
       },
       { duration: 500 },
@@ -861,7 +925,8 @@ const ReservationTripScreen = () => {
       console.log('✅ [OTP] OTP válido ingresado por conductor');
       setOtpVerified(true);
       setWaitingForOtpTimer(false);
-      setEnteredOtp(''); // 🆕 Limpiar input
+      setEnteredOtp('');
+      setOtpModalVisible(false);
       
       try {
         // Mark as verified in database
@@ -1065,14 +1130,14 @@ const ReservationTripScreen = () => {
   const startInAppNav = () => {
     setInAppNav(true);
     if (driverLocation && mapRef.current) {
-      mapZoomRef.current = 18;
-      setMapZoom(18);
+      mapZoomRef.current = IN_APP_NAV_ZOOM;
+      setMapZoom(IN_APP_NAV_ZOOM);
       mapRef.current.animateCamera(
         {
           center: driverLocation,
           heading: driverHeading || 0,
-          pitch: 45,
-          zoom: 18,
+          pitch: IN_APP_NAV_PITCH,
+          zoom: IN_APP_NAV_ZOOM,
         },
         { duration: 600 },
       );
@@ -1085,7 +1150,7 @@ const ReservationTripScreen = () => {
       {
         center: driverLocation,
         heading: inAppNav ? (driverHeading || 0) : 0,
-        pitch: inAppNav ? 45 : 0,
+        pitch: inAppNav ? IN_APP_NAV_PITCH : 0,
         zoom: mapZoomRef.current,
       },
       { duration: 400 },
@@ -1103,7 +1168,7 @@ const ReservationTripScreen = () => {
       {
         center,
         heading: inAppNav ? (driverHeading || 0) : 0,
-        pitch: inAppNav ? 45 : 0,
+        pitch: inAppNav ? IN_APP_NAV_PITCH : 0,
         zoom: next,
       },
       { duration: 250 },
@@ -1128,7 +1193,8 @@ const ReservationTripScreen = () => {
   const tipRadius = tipRadiusForZoom(mapZoom);
   const haloRadius = accuracyHaloForZoom(driverAccuracy, mapZoom);
   const showRouteStartTip = phase === 'TRIP_STARTED';
-  const showRouteEndTip = routeCoords.length > 1;
+  // En espera en recogida el puck ya marca el punto; no pintar punta enorme encima.
+  const showRouteEndTip = routeCoords.length > 1 && phase !== 'ARRIVED_AT_PICKUP';
 
   const renderPaymentIcon = (size = 14) => {
     if (paymentMode === 'nequi') {
@@ -1284,8 +1350,8 @@ const ReservationTripScreen = () => {
               <Circle
                 center={routeCoords[0]}
                 radius={tipRadius}
-                fillColor="#FFFFFF"
-                strokeColor="#00E5FF"
+                fillColor={TIP_START_FILL}
+                strokeColor={TIP_STROKE}
                 strokeWidth={2}
                 zIndex={5}
               />
@@ -1294,8 +1360,8 @@ const ReservationTripScreen = () => {
               <Circle
                 center={routeCoords[routeCoords.length - 1]}
                 radius={tipRadius}
-                fillColor="#E91E63"
-                strokeColor="#00E5FF"
+                fillColor={TIP_END_FILL}
+                strokeColor={TIP_END_STROKE}
                 strokeWidth={2}
                 zIndex={5}
               />
@@ -1463,18 +1529,15 @@ const ReservationTripScreen = () => {
         {phase === 'ARRIVED_AT_PICKUP' && (
           <Animatable.View animation="fadeInUp" duration={400} useNativeDriver>
             <View style={s.priceCard}>
-              <View style={s.priceCardHeader}>
-                <Ionicons name="cash" size={24} color="#00E5FF" />
-                <Text style={s.priceCardTitle}>
-                  {reservation.status === 'COMPLETE' ? '💰 Valor Final Liquidado' : '💰 Valor Estimado'}
-                </Text>
-              </View>
+              <Text style={s.priceCardTitle}>
+                {reservation.status === 'COMPLETE' ? 'Valor final liquidado' : 'Valor estimado'}
+              </Text>
               <Text style={s.priceCardAmount}>
                 {formatBookingFareRange(reservation)}
               </Text>
               <View style={s.priceCardPayment}>
                 <View style={s.payIconBoxLg}>
-                  {renderPaymentIcon(16)}
+                  {renderPaymentIcon(14)}
                 </View>
                 <Text style={s.priceCardPaymentText}>
                   {paymentMode === 'cash' ? 'Pago en Efectivo' : paymentMode === 'nequi' ? 'Pago por Nequi' : 'Pago por Daviplata'}
@@ -1520,50 +1583,27 @@ const ReservationTripScreen = () => {
             {/* 🔐 OTP Input - SIEMPRE disponible durante ARRIVED_AT_PICKUP */}
             {!otpVerified && (
               <Animatable.View animation="fadeInUp" duration={400} useNativeDriver>
-                <View style={[s.actionBtn, { backgroundColor: 'rgba(0, 244, 245, 0.08)', borderWidth: 2, borderColor: '#00F4F5', padding: 0, overflow: 'hidden' }]}>
-                  <View style={{ width: '100%' }}>
-                    <Text style={{ fontSize: 13, color: '#00F4F5', fontWeight: '600', marginBottom: 12, paddingHorizontal: 16, paddingTop: 16 }}>
-                      💬 ¿El cliente ya te pasó el código?
-                    </Text>
-                    <View style={{ 
-                      flexDirection: 'row', 
-                      paddingHorizontal: 16,
-                      paddingBottom: 16,
-                      gap: 8,
-                    }}>
-                      <TextInput
-                        placeholder="Digita el código OTP"
-                        placeholderTextColor="rgba(255,255,255,0.4)"
-                        value={enteredOtp}
-                        onChangeText={setEnteredOtp}
-                        maxLength={6}
-                        keyboardType="numeric"
-                        style={{
-                          flex: 1,
-                          backgroundColor: 'rgba(0,0,0,0.3)',
-                          borderRadius: 8,
-                          paddingHorizontal: 12,
-                          paddingVertical: 10,
-                          color: '#FFF',
-                          fontSize: 16,
-                          fontWeight: '600',
-                          letterSpacing: 4,
-                        }}
-                      />
-                      <TouchableOpacity
-                        style={{
-                          backgroundColor: '#00F4F5',
-                          paddingHorizontal: 14,
-                          borderRadius: 8,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                        onPress={() => handleOTPMatch(String(enteredOtp).trim() === String(currentOtp).trim())}
-                        disabled={loading || enteredOtp.length === 0}
-                      >
-                        <Ionicons name="checkmark" size={20} color="#00204a" />
-                      </TouchableOpacity>
-                    </View>
+                <View style={s.otpCard}>
+                  <Text style={s.otpCardPrompt}>
+                    ¿El cliente ya te pasó el código?
+                  </Text>
+                  <View style={s.otpCardRow}>
+                    <TextInput
+                      placeholder="Digita el código OTP"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      value={enteredOtp}
+                      onChangeText={setEnteredOtp}
+                      maxLength={6}
+                      keyboardType="numeric"
+                      style={s.otpCardInput}
+                    />
+                    <TouchableOpacity
+                      style={s.otpCardSubmit}
+                      onPress={() => handleOTPMatch(String(enteredOtp).trim() === String(currentOtp).trim())}
+                      disabled={loading || enteredOtp.length === 0}
+                    >
+                      <Ionicons name="checkmark" size={18} color="#00204a" />
+                    </TouchableOpacity>
                   </View>
                 </View>
               </Animatable.View>
@@ -1571,14 +1611,14 @@ const ReservationTripScreen = () => {
 
             {/* ⏱️ OTP Timer Countdown - Mostrar mientras espera */}
             {waitingForOtpTimer && driverCountdown !== null && driverCountdown > 0 && !otpVerified && (
-              <Animatable.View 
-                animation="pulse" 
-                easing="ease-in-out-cubic" 
-                iterationCount="infinite" 
+              <Animatable.View
+                animation="pulse"
+                easing="ease-in-out-cubic"
+                iterationCount="infinite"
                 duration={1500}
                 style={s.timerContainer}
               >
-                <MaterialCommunityIcons name="clock-outline" size={32} color="#00E5FF" />
+                <MaterialCommunityIcons name="clock-outline" size={20} color="#00E5FF" />
                 <Text style={s.timerCountdown}>
                   {Math.floor(driverCountdown / 60)}:{(driverCountdown % 60).toString().padStart(2, '0')}
                 </Text>
@@ -1586,19 +1626,14 @@ const ReservationTripScreen = () => {
               </Animatable.View>
             )}
 
-            {/* 🔐 OTP Code Display + Input - Mostrar cuando timer expire */}
+            {/* 🔐 OTP Code Display - cuando el timer expira */}
             {!waitingForOtpTimer && currentOtp && !otpVerified && (
               <Animatable.View animation="fadeInUp" duration={400} useNativeDriver>
-                <View style={[s.actionBtn, { backgroundColor: 'rgba(0, 230, 118, 0.08)', borderWidth: 2, borderColor: '#00E676' }]}>
-                  <View style={{ alignItems: 'center', width: '100%' }}>
-                    <MaterialCommunityIcons name="lock-check" size={28} color="#00E676" />
-                    <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 8 }}>CÓDIGO DE VERIFICACIÓN</Text>
-                    <Text style={{ fontSize: 44, fontWeight: '800', color: '#00E676', letterSpacing: 8, fontFamily: 'monospace', marginTop: 8 }}>
-                      {currentOtp}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 8, textAlign: 'center' }}>
-                      Digita este código para habilitar el inicio del viaje
-                    </Text>
+                <View style={s.otpRevealCard}>
+                  <MaterialCommunityIcons name="lock-check" size={16} color="#00E676" />
+                  <View style={s.otpRevealMeta}>
+                    <Text style={s.otpRevealLabel}>Código de verificación</Text>
+                    <Text style={s.otpRevealCode}>{currentOtp}</Text>
                   </View>
                 </View>
               </Animatable.View>
@@ -1607,13 +1642,11 @@ const ReservationTripScreen = () => {
             {/* ✅ OTP Verified indicator */}
             {otpVerified && (
               <Animatable.View animation="fadeInUp" duration={400} useNativeDriver>
-                <View style={[s.actionBtn, { backgroundColor: 'rgba(0, 230, 118, 0.08)', borderWidth: 2, borderColor: '#00E676' }]}>
-                  <View style={{ alignItems: 'center', width: '100%' }}>
-                    <MaterialCommunityIcons name="lock-check" size={28} color="#00E676" />
-                    <Text style={{ fontSize: 14, color: '#00E676', marginTop: 8, fontWeight: '700' }}>✓ CÓDIGO VERIFICADO</Text>
-                    <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 6, textAlign: 'center' }}>
-                      Ya puedes iniciar el viaje
-                    </Text>
+                <View style={s.otpRevealCard}>
+                  <MaterialCommunityIcons name="lock-check" size={16} color="#00E676" />
+                  <View style={s.otpRevealMeta}>
+                    <Text style={[s.otpRevealLabel, { color: '#00E676' }]}>Código verificado</Text>
+                    <Text style={s.otpRevealHint}>Ya puedes iniciar el viaje</Text>
                   </View>
                 </View>
               </Animatable.View>
@@ -1622,7 +1655,7 @@ const ReservationTripScreen = () => {
             {/* 🔐 OTP Verification Button - Mostrar después de timer y antes de verificar */}
             {!waitingForOtpTimer && !otpVerified && (
               <TouchableOpacity
-                style={[s.actionBtn, { backgroundColor: '#00E5FF' }]}
+                style={[s.actionBtn, s.actionBtnCompact, { backgroundColor: '#00E5FF' }]}
                 onPress={() => setOtpModalVisible(true)}
                 disabled={loading}
                 activeOpacity={0.85}
@@ -1631,8 +1664,8 @@ const ReservationTripScreen = () => {
                   <ActivityIndicator color="#051A26" size="small" />
                 ) : (
                   <>
-                    <Ionicons name="lock-closed" size={22} color="#051A26" />
-                    <Text style={s.actionBtnTxt}>🔐 Ingresar Código</Text>
+                    <Ionicons name="lock-closed" size={18} color="#051A26" />
+                    <Text style={[s.actionBtnTxt, s.actionBtnTxtCompact]}>Ingresar código</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -1640,7 +1673,11 @@ const ReservationTripScreen = () => {
 
             {/* Start Trip Button - Only enabled after OTP verified */}
             <TouchableOpacity
-              style={[s.actionBtn, { backgroundColor: otpVerified ? '#00E5FF' : 'rgba(255,255,255,0.15)', marginTop: 12 }]}
+              style={[
+                s.actionBtn,
+                s.actionBtnCompact,
+                { backgroundColor: otpVerified ? '#00E5FF' : 'rgba(255,255,255,0.15)', marginTop: 6 },
+              ]}
               onPress={handleStartTrip}
               disabled={loading || !otpVerified}
               activeOpacity={0.85}
@@ -1649,12 +1686,12 @@ const ReservationTripScreen = () => {
                 <ActivityIndicator color="#051A26" size="small" />
               ) : (
                 <>
-                  <Ionicons 
-                    name="car" 
-                    size={22} 
-                    color={otpVerified ? '#051A26' : 'rgba(255,255,255,0.3)'} 
+                  <Ionicons
+                    name="car"
+                    size={18}
+                    color={otpVerified ? '#051A26' : 'rgba(255,255,255,0.3)'}
                   />
-                  <Text style={[s.actionBtnTxt, !otpVerified && { opacity: 0.5 }]}>
+                  <Text style={[s.actionBtnTxt, s.actionBtnTxtCompact, !otpVerified && { opacity: 0.5 }]}>
                     Iniciar Viaje
                   </Text>
                 </>
@@ -2019,20 +2056,109 @@ const s = StyleSheet.create({
   },
   /* ⏱️ OTP Timer Container */
   timerContainer: {
-    alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 20, marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 10,
     backgroundColor: 'rgba(0,229,255,0.08)',
-    borderWidth: 1.5, borderColor: '#00E5FF',
-    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,229,255,0.35)',
+    borderRadius: 12,
     gap: 8,
   },
   timerCountdown: {
-    fontSize: 52, fontWeight: '900', color: '#00E5FF',
-    letterSpacing: 2, fontFamily: 'monospace',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 1,
+    fontFamily: 'monospace',
   },
   timerSubtext: {
-    fontSize: 14, fontWeight: '600', color: '#AAA',
-    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.55)',
+  },
+  otpCard: {
+    width: '100%',
+    backgroundColor: 'rgba(0, 244, 245, 0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,244,245,0.45)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  otpCardPrompt: {
+    fontSize: 12,
+    color: '#00F4F5',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  otpCardRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  otpCardInput: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 3,
+  },
+  otpCardSubmit: {
+    backgroundColor: '#00F4F5',
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpRevealCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    backgroundColor: 'rgba(0, 230, 118, 0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,230,118,0.45)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  otpRevealMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  otpRevealLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.65)',
+    marginBottom: 2,
+  },
+  otpRevealCode: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#00E676',
+    letterSpacing: 4,
+    fontFamily: 'monospace',
+  },
+  otpRevealHint: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.6)',
+  },
+  actionBtnCompact: {
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  actionBtnTxtCompact: {
+    fontSize: 14,
   },
   /* Markers */
   markerWrap: { alignItems: 'center' },
@@ -2084,53 +2210,48 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#00E5FF',
   },
-  /* 🆕 Price Card Styles */
+  /* Price Card */
   priceCard: {
     backgroundColor: 'rgba(0,229,255,0.08)',
-    borderWidth: 2,
-    borderColor: 'rgba(0,229,255,0.3)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,229,255,0.28)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
     alignItems: 'center',
-  },
-  priceCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
   },
   priceCardTitle: {
-    fontSize: 16,
+    fontSize: 11,
     fontWeight: '700',
     color: '#00E5FF',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
+    marginBottom: 4,
   },
   priceCardAmount: {
-    fontSize: 28,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#00E5FF',
-    marginBottom: 12,
-    letterSpacing: 0.5,
+    marginBottom: 6,
+    letterSpacing: 0.3,
     textAlign: 'center',
   },
   priceCardPayment: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    gap: 5,
   },
   priceCardPaymentText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
     color: '#FFF',
   },
   priceCardNote: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.55)',
     textAlign: 'center',
-    fontStyle: 'italic',
+    marginTop: 6,
   },
   /* ⭐ Rating modal */
   ratingBackdrop: {

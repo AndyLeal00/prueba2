@@ -56,7 +56,11 @@ const CustomerTabNavigator: React.FC = () => {
         tabBarPosition="bottom"
         tabBar={(props) => (
           <View style={styles.floatingTabBar} pointerEvents="box-none">
-            <ActiveTripFloatingBanner stackNavigation={stackNavigation} />
+              <ActiveTripFloatingBanner
+                stackNavigation={stackNavigation}
+                variant="profile"
+                tripFilter="all"
+              />
             <CustomerBottomNav {...props} />
           </View>
         )}
@@ -79,8 +83,6 @@ const CustomerTabNavigator: React.FC = () => {
  * Order: Vehículo ↔ Billetera ↔ GO ↔ Historial ↔ Perfil
  */
 const DriverTabNavigator: React.FC = () => {
-  const stackNavigation = useNavigation<any>();
-
   return (
     <View style={styles.driverRoot}>
       <DriverTabs.Navigator
@@ -88,7 +90,7 @@ const DriverTabNavigator: React.FC = () => {
         tabBarPosition="bottom"
         tabBar={(props) => (
           <View style={styles.floatingTabBar} pointerEvents="box-none">
-            <ActiveTripFloatingBanner stackNavigation={stackNavigation} />
+            {/* Conductor: banners solo en GO (stack offline / tab En curso). */}
             <DriverBottomNav {...props} />
           </View>
         )}

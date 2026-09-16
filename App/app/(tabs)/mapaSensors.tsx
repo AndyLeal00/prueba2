@@ -59,6 +59,8 @@ const MapSensor = forwardRef<MapSensorHandle, MapSensorProps>(
   ({ children, currentPosition = null, viewMode = '2D', mapTheme = 'dark', mapBottomPadding = 0, onMapBearingChange }, ref) => {
   const mapRef = useRef<MapView>(null);
   const headingRef = useRef(0);
+  const gpsHeadingRef = useRef(-1);
+  const speedMpsRef = useRef(0);
   const lastCameraRef = useRef<CameraSnapshot | null>(null);
   const hasMountedCameraRef = useRef(false);
   const viewModeRef = useRef<MapViewMode>(viewMode);
@@ -266,14 +268,26 @@ const MapSensor = forwardRef<MapSensorHandle, MapSensorProps>(
       subscription = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Highest, distanceInterval: 2, timeInterval: 1500 },
         (loc) => {
-          const { latitude, longitude, heading: h, accuracy } = loc.coords;
-          const newHeading = (h !== null && !isNaN(h)) ? h : headingRef.current;
+          const { latitude, longitude, heading: h, accuracy, speed } = loc.coords;
+          if (typeof speed === 'number' && speed >= 0) speedMpsRef.current = speed;
+          if (typeof h === 'number' && !isNaN(h) && h >= 0) {
+            gpsHeadingRef.current = h;
+          }
+          const newHeading =
+            typeof h === 'number' && !isNaN(h) && h >= 0 ? h : headingRef.current;
           setRegion(prev => ({ ...prev, latitude, longitude }));
           regionRef.current = { latitude, longitude };
-          setHeading(newHeading);
-          headingRef.current = newHeading;
+          // Si vas en movimiento, el GPS manda; si no, la brújula (efecto aparte).
+          if (speedMpsRef.current >= 1.5 || northUpLockedRef.current) {
+            setHeading(newHeading);
+            headingRef.current = newHeading;
+            syncCamera(latitude, longitude, newHeading, hasMountedCameraRef.current ? 800 : 400, !hasMountedCameraRef.current);
+          } else {
+            setRegion(prev => ({ ...prev, latitude, longitude }));
+            regionRef.current = { latitude, longitude };
+            syncCamera(latitude, longitude, headingRef.current, hasMountedCameraRef.current ? 800 : 400, !hasMountedCameraRef.current);
+          }
           setLocationAccuracy(clampAccuracy(accuracy));
-          syncCamera(latitude, longitude, newHeading, hasMountedCameraRef.current ? 800 : 400, !hasMountedCameraRef.current);
           hasMountedCameraRef.current = true;
         }
       );
@@ -281,6 +295,47 @@ const MapSensor = forwardRef<MapSensorHandle, MapSensorProps>(
 
     startTracking();
     return () => { subscription?.remove(); };
+  }, []);
+
+  // Brújula: al girar el celular rota mapa + puck (si no está bloqueado al norte).
+  useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        sub = await Location.watchHeadingAsync((h) => {
+          if (cancelled || northUpLockedRef.current) return;
+          if (speedMpsRef.current >= 1.5) return; // en marcha: GPS
+
+          const compass =
+            typeof h.trueHeading === 'number' && h.trueHeading >= 0
+              ? h.trueHeading
+              : h.magHeading;
+          if (typeof compass !== 'number' || compass < 0) return;
+
+          const prev = headingRef.current;
+          let delta = ((compass - prev + 540) % 360) - 180;
+          if (Math.abs(delta) < 1.5) return;
+          const smoothed = ((prev + delta * 0.4) % 360 + 360) % 360;
+
+          headingRef.current = smoothed;
+          setHeading(smoothed);
+          const { latitude, longitude } = regionRef.current;
+          if (!hasMountedCameraRef.current) return;
+          syncCamera(latitude, longitude, smoothed, 280, false);
+        });
+      } catch (e) {
+        console.warn('[MapSensor] watchHeadingAsync failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        sub?.remove();
+      } catch {
+        /* noop */
+      }
+    };
   }, []);
 
   const restoreCameraAfterMount = useCallback(() => {
@@ -351,8 +406,8 @@ const MapSensor = forwardRef<MapSensorHandle, MapSensorProps>(
             <Marker
               coordinate={{ latitude: region.latitude, longitude: region.longitude }}
               anchor={{ x: 0.5, y: 0.5 }}
-              flat={viewMode === '3D'}
-              rotation={viewMode === '3D' ? heading : 0}
+              flat
+              rotation={heading}
               image={DRIVER_LOCATION_PUCK_IMAGE}
               zIndex={2}
             />

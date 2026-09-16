@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Animatable from 'react-native-animatable';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { RootState } from '@/common/store';
 import { selectDriverOnline } from '@/components/DriverBottomNav';
 import { invokeDriverGoActivate, invokeDriverGoDeactivate } from '@/common/utils/driverGoBridge';
@@ -23,6 +23,8 @@ import { toCanonicalCarType } from '@/common/utils/carType';
 import { formatBookingFareRange, getBookingFareRange } from '@/constants/fare';
 import { API_KEY } from '@/config/AppConfig';
 import { GOOGLE_MAPS_DARK_STYLE } from '@/config/googleMapsDarkStyle';
+import { useActiveTripBanner } from '@/hooks/useActiveTripBanner';
+import { ActiveTripBannerCard } from '@/components/ActiveTripFloatingBanner';
 
 const IMMEDIATE_RANGE_KM = 3;
 const ROUTE_LINE_BLUE = '#00E5FF';
@@ -30,6 +32,20 @@ const ROUTE_LINE_BLUE = '#00E5FF';
 const BG_IMAGE = require('../../assets/images/bg.png');
 
 type LatLng = { latitude: number; longitude: number };
+
+/** Radio en metros para que las puntas midan ~10px en el mapa del modal (190px). */
+const detailTipRadiusMeters = (coords: LatLng[], mapHeightPx = 190): number => {
+  let minLat = coords[0].latitude;
+  let maxLat = coords[0].latitude;
+  for (let i = 1; i < coords.length; i++) {
+    const lat = coords[i].latitude;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  const latSpan = Math.max((maxLat - minLat) * 1.55, 0.01);
+  const metersPerPx = (latSpan * 111_320) / mapHeightPx;
+  return Math.min(Math.max(metersPerPx * 5, 12), 70);
+};
 
 const decodePolyline = (encoded: string): LatLng[] => {
   const coordinates: LatLng[] = [];
@@ -104,7 +120,7 @@ type Reservation = {
 
 type DriverReservationsScreenProps = {
   embedded?: boolean;
-  initialTab?: 'reservations' | 'immediate';
+  initialTab?: 'reservations' | 'immediate' | 'active';
 };
 
 const formatDate = (ts: string) => {
@@ -194,6 +210,11 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   const profile = useSelector((s: RootState) => s.auth.profile) as any;
   const driverOnline = useSelector(selectDriverOnline);
   const memberships = useSelector((s: RootState) => s.memberships.memberships);
+  const {
+    bookings: activeTrips,
+    activeReservation,
+    isDriver: activeTripIsDriver,
+  } = useActiveTripBanner();
 
   // FK: memberships.conductor → auth.users(id). Probamos auth_id primero
   // y caemos a users.id por compatibilidad con datos legacy.
@@ -233,14 +254,14 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   const [detailRouteCoords, setDetailRouteCoords] = useState<LatLng[]>([]);
   const [detailEndpoints, setDetailEndpoints] = useState<{ start: LatLng; end: LatLng } | null>(null);
   const [detailRouteLoading, setDetailRouteLoading] = useState(false);
-  const [detailMarkerTracks, setDetailMarkerTracks] = useState(true);
+  const [detailTipRadius, setDetailTipRadius] = useState(18);
   const [customerPhotos, setCustomerPhotos] = useState<Record<string, string>>({});
   const detailMapRef = useRef<MapView | null>(null);
   const [activeCarType, setActiveCarType] = useState<string | null>(null);
 
-  /* ── Tab selector: Reservas vs Inmediatos ── */
-  const routeInitialTab = route.params?.initialTab as 'reservations' | 'immediate' | undefined;
-  const [activeTab, setActiveTab] = useState<'reservations' | 'immediate'>(
+  /* ── Tab selector: Reservas / Inmediatos / En curso ── */
+  const routeInitialTab = route.params?.initialTab as 'reservations' | 'immediate' | 'active' | undefined;
+  const [activeTab, setActiveTab] = useState<'reservations' | 'immediate' | 'active'>(
     () => initialTabProp || routeInitialTab || 'reservations',
   );
   useEffect(() => {
@@ -923,18 +944,17 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
 
     const applyRoute = (coords: LatLng[]) => {
       if (coords.length < 2) return;
-      setDetailMarkerTracks(true);
       setDetailRouteCoords(coords);
       setDetailEndpoints({
         start: coords[0],
         end: coords[coords.length - 1],
       });
+      setDetailTipRadius(detailTipRadiusMeters(coords));
       setTimeout(() => {
         detailMapRef.current?.fitToCoordinates(coords, {
           edgePadding: { top: 28, right: 28, bottom: 28, left: 28 },
           animated: false,
         });
-        setTimeout(() => setDetailMarkerTracks(false), 500);
       }, 250);
     };
 
@@ -1063,6 +1083,23 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
     </View>
   );
 
+  const pinnedActiveTrip =
+    activeTripIsDriver && activeTab === 'reservations' ? activeReservation : null;
+
+  const listData =
+    activeTab === 'reservations'
+      ? reservations
+      : activeTab === 'immediate'
+        ? immediateServices
+        : [];
+
+  const headerTitle =
+    activeTab === 'reservations'
+      ? 'Reservas Disponibles'
+      : activeTab === 'immediate'
+        ? 'Servicios Inmediatos'
+        : 'Viajes en curso';
+
   return (
     <View style={[s.root, embedded && s.rootEmbedded]}>
       <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
@@ -1084,7 +1121,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
             {...(!embedded ? { adjustsFontSizeToFit: true, minimumFontScale: 0.85 } : {})}
             style={[s.headerTitle, embedded && s.headerTitleEmbedded]}
           >
-            {activeTab === 'reservations' ? 'Reservas Disponibles' : 'Servicios Inmediatos'}
+            {headerTitle}
           </Text>
         </View>
         <View style={s.headerActions}>
@@ -1132,28 +1169,26 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
         </View>
       </View>
 
-      {/* Tab selector */}
+      {/* Tab selector compacto */}
       <View style={[s.tabContainer, embedded && s.tabContainerEmbedded]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[s.tab, activeTab === 'reservations' && s.tabActive]}
           onPress={() => {
             setActiveTab('reservations');
             setRefreshing(false);
           }}
         >
-          <Ionicons name="calendar-outline" size={16} color={activeTab === 'reservations' ? '#00E5FF' : 'rgba(255,255,255,0.5)'} />
+          <Ionicons name="calendar-outline" size={14} color={activeTab === 'reservations' ? '#00E5FF' : 'rgba(255,255,255,0.5)'} />
           <Text
             {...FIXED_TEXT_PROPS}
             numberOfLines={1}
-            ellipsizeMode="tail"
-            {...(!embedded ? { adjustsFontSizeToFit: true, minimumFontScale: 0.8 } : {})}
             style={[s.tabTxt, embedded && s.tabTxtEmbedded, activeTab === 'reservations' && s.tabTxtActive]}
           >
             Reservas
           </Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           style={[s.tab, activeTab === 'immediate' && s.tabActive]}
           onPress={() => {
             setActiveTab('immediate');
@@ -1162,15 +1197,30 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
             }
           }}
         >
-          <Ionicons name="flash-outline" size={16} color={activeTab === 'immediate' ? '#00E5FF' : 'rgba(255,255,255,0.5)'} />
+          <Ionicons name="flash-outline" size={14} color={activeTab === 'immediate' ? '#00E5FF' : 'rgba(255,255,255,0.5)'} />
           <Text
             {...FIXED_TEXT_PROPS}
             numberOfLines={1}
-            ellipsizeMode="tail"
-            {...(!embedded ? { adjustsFontSizeToFit: true, minimumFontScale: 0.75 } : {})}
             style={[s.tabTxt, embedded && s.tabTxtEmbedded, activeTab === 'immediate' && s.tabTxtActive]}
           >
-            Inmediatos ({rangeKm}km)
+            Inmediatos
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[s.tab, activeTab === 'active' && s.tabActive]}
+          onPress={() => {
+            setActiveTab('active');
+            setRefreshing(false);
+          }}
+        >
+          <Ionicons name="navigate-circle-outline" size={14} color={activeTab === 'active' ? '#00E5FF' : 'rgba(255,255,255,0.5)'} />
+          <Text
+            {...FIXED_TEXT_PROPS}
+            numberOfLines={1}
+            style={[s.tabTxt, embedded && s.tabTxtEmbedded, activeTab === 'active' && s.tabTxtActive]}
+          >
+            En curso{activeTrips.length > 0 ? ` (${activeTrips.length})` : ''}
           </Text>
         </TouchableOpacity>
       </View>
@@ -1180,15 +1230,55 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
           <ActivityIndicator size="large" color="#00E5FF" />
           <Text style={s.loadingTxt}>Cargando reservas...</Text>
         </View>
+      ) : activeTab === 'active' ? (
+        <FlatList
+          data={activeTripIsDriver ? activeTrips : []}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <ActiveTripBannerCard
+              booking={item}
+              isDriver
+              stackNavigation={nav}
+              compact
+            />
+          )}
+          contentContainerStyle={[s.list, { paddingBottom: embedded ? 18 : insets.bottom + 30 }]}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={s.emptyWrap}>
+              <Ionicons name="navigate-circle-outline" size={52} color="rgba(0,229,255,0.3)" />
+              <Text style={s.emptyTitle}>Sin viajes en curso</Text>
+              <Text style={s.emptySub}>
+                Aquí verás tus inmediatos y reservas activas.
+              </Text>
+            </View>
+          }
+        />
       ) : (
         <FlatList
-          data={activeTab === 'reservations' ? reservations : immediateServices}
+          data={listData}
           keyExtractor={item => item.id}
           renderItem={renderItem}
           contentContainerStyle={[s.list, { paddingBottom: embedded ? 18 : insets.bottom + 30 }]}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            pinnedActiveTrip ? (
+              <ActiveTripBannerCard
+                booking={pinnedActiveTrip}
+                isDriver
+                stackNavigation={nav}
+                compact
+              />
+            ) : null
+          }
           ListEmptyComponent={
-            activeTab === 'reservations' ? EmptyState : (
+            pinnedActiveTrip ? (
+              <View style={s.emptyWrapPinned}>
+                <Text style={s.emptySubPinned}>
+                  No hay más reservas disponibles.
+                </Text>
+              </View>
+            ) : activeTab === 'reservations' ? EmptyState : (
               <View style={s.emptyWrap}>
                 <Ionicons
                   name={
@@ -1219,7 +1309,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                       ? 'Debes activar un vehículo en "Mis Vehículos" para ver servicios de tu categoría.'
                       : locationDenied
                         ? 'Necesitamos tu ubicación para mostrarte servicios a menos de 3 km.'
-                        : `Solo servicios a menos de ${rangeKm} km y de tu categoría (${activeCarType}).`}
+                        : `Solo servicios nuevos a menos de ${rangeKm} km y de tu categoría (${activeCarType}).`}
                 </Text>
               </View>
             )
@@ -1358,27 +1448,23 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                         lineCap="round"
                         zIndex={2}
                       />
-                      {/* Puntas en px fijos (no Circle en metros) */}
-                      <Marker
-                        coordinate={detailEndpoints.start}
-                        anchor={{ x: 0.5, y: 0.5 }}
-                        tracksViewChanges={detailMarkerTracks}
+                      {/* Circles geográficos: centrados exactos en las puntas (sin offset de Marker View) */}
+                      <Circle
+                        center={detailEndpoints.start}
+                        radius={detailTipRadius}
+                        fillColor="#FFFFFF"
+                        strokeColor="#00E5FF"
+                        strokeWidth={2}
                         zIndex={6}
-                      >
-                        <View style={s.tipHitbox}>
-                          <View style={s.tipDotStart} />
-                        </View>
-                      </Marker>
-                      <Marker
-                        coordinate={detailEndpoints.end}
-                        anchor={{ x: 0.5, y: 0.5 }}
-                        tracksViewChanges={detailMarkerTracks}
+                      />
+                      <Circle
+                        center={detailEndpoints.end}
+                        radius={detailTipRadius}
+                        fillColor="#E91E63"
+                        strokeColor="#00E5FF"
+                        strokeWidth={2}
                         zIndex={7}
-                      >
-                        <View style={s.tipHitbox}>
-                          <View style={s.tipDotEnd} />
-                        </View>
-                      </Marker>
+                      />
                     </MapView>
                   ) : (
                     <View style={s.modalMapLoading}>
@@ -1587,8 +1673,10 @@ const s = StyleSheet.create({
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingTxt: { fontSize: 14, color: 'rgba(255,255,255,0.5)' },
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 100, gap: 10 },
+  emptyWrapPinned: { paddingTop: 8, paddingBottom: 12, alignItems: 'center' },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: 'rgba(255,255,255,0.7)' },
   emptySub: { fontSize: 13, color: 'rgba(255,255,255,0.4)', textAlign: 'center', paddingHorizontal: 40 },
+  emptySubPinned: { fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center', paddingHorizontal: 20 },
   card: {
     borderRadius: 14,
     padding: 12,
@@ -1769,36 +1857,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(5,26,38,0.6)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.08)',
   },
   modalStatValue: { fontSize: 11, fontWeight: '700', color: '#FFF' },
-  routeEndpointStart: {
-    width: 12, height: 12, borderRadius: 6,
-    backgroundColor: '#FFFFFF', borderWidth: 2.5, borderColor: '#00E5FF',
-  },
-  routeEndpointEnd: {
-    width: 12, height: 12, borderRadius: 6,
-    backgroundColor: '#E91E63', borderWidth: 2.5, borderColor: '#00E5FF',
-  },
-  tipHitbox: {
-    width: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tipDotStart: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#00E5FF',
-  },
-  tipDotEnd: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#E91E63',
-    borderWidth: 2,
-    borderColor: '#00E5FF',
-  },
   destMarkerSm: {
     width: 22,
     height: 22,
@@ -1833,10 +1891,13 @@ const s = StyleSheet.create({
 
   // Tab styles
   tabContainer: {
-    flexDirection: 'row', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     backgroundColor: 'rgba(5,26,38,0.6)',
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   tabContainerEmbedded: {
     backgroundColor: '#051A26',
@@ -1844,16 +1905,29 @@ const s = StyleSheet.create({
     borderTopWidth: 0,
   },
   tab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 6,
-    paddingVertical: 10, paddingHorizontal: 14,
-    borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    minWidth: 0,
   },
   tabActive: {
     backgroundColor: 'rgba(0,229,255,0.12)',
     borderColor: 'rgba(0,229,255,0.3)',
   },
-  tabTxt: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.5)', flexShrink: 1 },
-  tabTxtEmbedded: { fontSize: 12, flexShrink: 0 },
+  tabTxt: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.5)',
+    flexShrink: 1,
+  },
+  tabTxtEmbedded: { fontSize: 10, flexShrink: 1 },
   tabTxtActive: { color: '#00E5FF', fontWeight: '700' },
 });

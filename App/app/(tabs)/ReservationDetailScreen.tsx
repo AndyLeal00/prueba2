@@ -16,6 +16,10 @@ import { formatBookingFareRange } from '@/constants/fare';
 import { fetchAndSyncUserRating } from '@/common/utils/userRating';
 import { API_KEY } from '@/config/AppConfig';
 import { GOOGLE_MAPS_DARK_STYLE } from '@/config/googleMapsDarkStyle';
+import {
+  CLIENT_ORIGIN_MARKER_IMAGE,
+  CLIENT_DEST_MARKER_IMAGE,
+} from '@/components/ClientOriginMapMarker';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
 const GOOGLE_MAPS_APIKEY = API_KEY;
@@ -266,7 +270,7 @@ const ReservationDetailScreen = () => {
       setRouteCoords(points);
       setTimeout(() => {
         mapRef.current?.fitToCoordinates(points, {
-          edgePadding: { top: 28, right: 28, bottom: 28, left: 28 },
+          edgePadding: { top: 36, right: 36, bottom: 36, left: 36 },
           animated: false,
         });
       }, 300);
@@ -633,7 +637,7 @@ Te confirmo, estos son los datos de tu servicio:
                 <Polyline
                   coordinates={routeCoords}
                   strokeColor="#00E5FF"
-                  strokeWidth={8}
+                  strokeWidth={3.5}
                   lineJoin="round"
                   lineCap="round"
                   tappable={false}
@@ -642,7 +646,7 @@ Te confirmo, estos son los datos de tu servicio:
                 <Polyline
                   coordinates={routeCoords}
                   strokeColor="#00E676"
-                  strokeWidth={5}
+                  strokeWidth={2}
                   lineJoin="round"
                   lineCap="round"
                   tappable={false}
@@ -651,19 +655,17 @@ Te confirmo, estos son los datos de tu servicio:
                 <Marker
                   coordinate={routeCoords[0]}
                   anchor={{ x: 0.5, y: 0.5 }}
+                  image={CLIENT_ORIGIN_MARKER_IMAGE}
                   tracksViewChanges={false}
                   zIndex={4}
-                >
-                  <View style={s.routeEndpointStart} />
-                </Marker>
+                />
                 <Marker
                   coordinate={routeCoords[routeCoords.length - 1]}
                   anchor={{ x: 0.5, y: 0.5 }}
+                  image={CLIENT_DEST_MARKER_IMAGE}
                   tracksViewChanges={false}
                   zIndex={5}
-                >
-                  <View style={s.routeEndpointEnd} />
-                </Marker>
+                />
               </MapView>
             </View>
           </Animatable.View>
@@ -1254,20 +1256,4 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   modalSubmitTxt: { color: '#051A26', fontWeight: '700', fontSize: 14 },
-  routeEndpointStart: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2.5,
-    borderColor: '#00E5FF',
-  },
-  routeEndpointEnd: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#E91E63',
-    borderWidth: 2.5,
-    borderColor: '#00E5FF',
-  },
 });

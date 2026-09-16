@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '@/common/store/store';
 import supabase, { SUPABASE_URL, getSupabaseAuthHeaders } from '@/config/SupabaseConfig';
@@ -8,6 +8,7 @@ export type ActiveTripBannerBooking = {
   id: string;
   status?: string;
   reference?: string;
+  booking_type?: string;
   customer?: string;
   customer_id?: string;
   customer_name?: string;
@@ -24,6 +25,28 @@ export type ActiveTripBannerBooking = {
 };
 
 const ACTIVE_STATUSES = ['ACCEPTED', 'ARRIVED', 'STARTED', 'IN_PROGRESS', 'TRIP_STARTED'];
+
+export function isImmediateBookingType(type?: string | null): boolean {
+  const t = String(type || '').trim().toLowerCase();
+  return t === 'immediate' || t === 'now' || t === '';
+}
+
+export function isReservationBookingType(type?: string | null): boolean {
+  const t = String(type || '').trim().toLowerCase();
+  return t === 'reservation' || t === 'scheduled' || t === 'book_later';
+}
+
+/** Título del banner según tipo de servicio. */
+export function activeTripTitle(booking?: ActiveTripBannerBooking | null): string {
+  if (!booking) return 'Viaje en curso';
+  if (isReservationBookingType(booking.booking_type as string)) {
+    return 'Viaje en curso de reserva';
+  }
+  if (isImmediateBookingType(booking.booking_type as string)) {
+    return 'Viaje en curso inmediato';
+  }
+  return 'Viaje en curso';
+}
 
 function pickUserType(user: any, profile: any): string {
   return String(
@@ -95,8 +118,8 @@ async function resolveCounterpartPhoto(
 }
 
 /**
- * Detecta el viaje activo del conductor o cliente (post-aceptación)
- * para mostrar el banner flotante en las pestañas principales.
+ * Detecta viajes activos del conductor o cliente (post-aceptación).
+ * Puede haber más de uno (p. ej. inmediato + reserva a la vez).
  */
 export function useActiveTripBanner() {
   const user = useSelector((state: RootState) => (state as any).auth?.user as any);
@@ -106,7 +129,9 @@ export function useActiveTripBanner() {
   const isDriver = userType === 'driver';
   const isCustomer = userType === 'customer' || userType === 'company';
 
-  const [booking, setBooking] = useState<ActiveTripBannerBooking | null>(null);
+  const [bookings, setBookings] = useState<ActiveTripBannerBooking[]>([]);
+  // Nombre de canal único por instancia (TabBar + lista de servicios montan el hook a la vez).
+  const instanceIdRef = useRef(`atb-${Math.random().toString(36).slice(2, 9)}`);
 
   const candidatesKey = [user?.id, user?.auth_id, profile?.id, profile?.auth_id]
     .filter(Boolean)
@@ -115,7 +140,7 @@ export function useActiveTripBanner() {
   const refresh = useCallback(async () => {
     const idCandidates = candidatesKey.split('|').filter(Boolean);
     if ((!isDriver && !isCustomer) || idCandidates.length === 0) {
-      setBooking(null);
+      setBookings([]);
       return;
     }
 
@@ -123,7 +148,7 @@ export function useActiveTripBanner() {
       const headers = await getSupabaseAuthHeaders();
       const uid = await resolvePublicUserId(idCandidates, headers);
       if (!uid) {
-        setBooking(null);
+        setBookings([]);
         return;
       }
 
@@ -131,9 +156,10 @@ export function useActiveTripBanner() {
       const filter = isDriver
         ? `driver_id=eq.${uid}`
         : `customer=eq.${uid}`;
+      // Varios viajes activos a la vez (inmediato + reserva).
       const url =
         `${SUPABASE_URL}/rest/v1/bookings?${filter}` +
-        `&status=in.(${statuses})&order=created_at.desc&limit=1&select=*`;
+        `&status=in.(${statuses})&order=created_at.desc&limit=10&select=*`;
 
       const resp = await fetch(url, { headers });
       if (!resp.ok) {
@@ -143,9 +169,12 @@ export function useActiveTripBanner() {
       }
 
       const rows = await resp.json();
-      const row = Array.isArray(rows) ? rows[0] : null;
+      const list = (Array.isArray(rows) ? rows : []).filter(
+        (row: any) => row?.id && isActiveTripStatus(row.status),
+      ) as ActiveTripBannerBooking[];
 
-      if (row?.id && isActiveTripStatus(row.status)) {
+      const enriched: ActiveTripBannerBooking[] = [];
+      for (const row of list) {
         const counterpartId = isDriver
           ? row.customer || row.customer_id
           : row.driver_id || row.driver;
@@ -153,15 +182,14 @@ export function useActiveTripBanner() {
           isDriver ? row.customer_image : row.driver_image,
         );
         const counterpart_photo = await resolveCounterpartPhoto(
-          counterpartId,
+          counterpartId as string,
           fallbackPhoto,
           headers,
         );
-
-        setBooking({ ...row, counterpart_photo });
-      } else {
-        setBooking(null);
+        enriched.push({ ...row, counterpart_photo });
       }
+
+      setBookings(enriched);
     } catch (e) {
       console.warn('[ActiveTripBanner] refresh error', e);
     }
@@ -173,13 +201,23 @@ export function useActiveTripBanner() {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  useEffect(() => {
-    const id = booking?.id;
-    if (!id) return;
+  const bookingIdsKey = bookings.map((b) => b.id).sort().join('|');
 
-    const channel = supabase
-      .channel(`active-trip-banner-${id}`)
-      .on(
+  useEffect(() => {
+    if (!bookingIdsKey) return;
+
+    const ids = bookingIdsKey.split('|').filter(Boolean);
+    const topic = `active-trip-banner-multi-${instanceIdRef.current}`;
+    try {
+      const existing = supabase.getChannels().find((ch) => ch.topic === `realtime:${topic}` || ch.topic === topic);
+      if (existing) supabase.removeChannel(existing);
+    } catch {
+      // ignore
+    }
+
+    let channel = supabase.channel(topic);
+    for (const id of ids) {
+      channel = channel.on(
         'postgres_changes',
         {
           event: 'UPDATE',
@@ -189,19 +227,21 @@ export function useActiveTripBanner() {
         },
         (payload) => {
           const updated = payload.new as ActiveTripBannerBooking | null;
-          if (!updated) return;
-          if (!isActiveTripStatus(updated.status)) {
-            setBooking(null);
-            return;
-          }
-          setBooking((prev) =>
-            prev
-              ? { ...prev, ...updated, counterpart_photo: prev.counterpart_photo }
-              : updated,
-          );
+          if (!updated?.id) return;
+          setBookings((prev) => {
+            if (!isActiveTripStatus(updated.status)) {
+              return prev.filter((b) => b.id !== updated.id);
+            }
+            return prev.map((b) =>
+              b.id === updated.id
+                ? { ...b, ...updated, counterpart_photo: b.counterpart_photo }
+                : b,
+            );
+          });
         },
-      )
-      .subscribe();
+      );
+    }
+    channel.subscribe();
 
     return () => {
       try {
@@ -210,13 +250,27 @@ export function useActiveTripBanner() {
         // ignore
       }
     };
-  }, [booking?.id]);
+  }, [bookingIdsKey]);
+
+  const booking = bookings[0] ?? null;
+
+  const activeImmediate = useMemo(
+    () => bookings.find((b) => isImmediateBookingType(b.booking_type as string)) ?? null,
+    [bookings],
+  );
+  const activeReservation = useMemo(
+    () => bookings.find((b) => isReservationBookingType(b.booking_type as string)) ?? null,
+    [bookings],
+  );
 
   return {
     booking,
+    bookings,
+    activeImmediate,
+    activeReservation,
     isDriver,
     isCustomer,
-    hasActiveTrip: !!booking?.id,
+    hasActiveTrip: bookings.length > 0,
     refresh,
   };
 }

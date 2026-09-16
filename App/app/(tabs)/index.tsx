@@ -60,6 +60,7 @@ import type { GoogleMapTheme } from '@/config/googleMapsDarkStyle';
 import MapCompassIcon from '@/components/MapCompassIcon';
 import { LinearGradient } from 'expo-linear-gradient';
 import DriverReservationsScreen from "./DriverReservationsScreen";
+import { ActiveTripBannerStack } from "@/components/ActiveTripFloatingBanner";
 import * as Speech from "expo-speech";
 import { useAppDispatch } from "../../common/store/hooks";
 import { updateUserProfile } from "@/common/reducers/authReducer";
@@ -2660,26 +2661,33 @@ const MapScreen = () => {
             )}
 
             {!showNovedades && !driverOnline && (
-              <View style={[nS.driverMiniPanel, { bottom: driverNavBottomPad - 12 }]}>
-                <Text {...FIXED_TEXT_PROPS} numberOfLines={1} style={nS.driverMiniPanelTitle}>Conductor desconectado</Text>
-                <Text {...FIXED_TEXT_PROPS} numberOfLines={2} style={nS.driverMiniPanelSub}>Activa GO para iniciar</Text>
+              <View style={[nS.driverOfflineStack, { bottom: driverNavBottomPad - 12 }]}>
+                <ActiveTripBannerStack
+                  stackNavigation={navigation}
+                  maxItems={4}
+                  tripFilter="all"
+                />
+                <View style={nS.driverMiniPanel}>
+                  <Text {...FIXED_TEXT_PROPS} numberOfLines={1} style={nS.driverMiniPanelTitle}>Conductor desconectado</Text>
+                  <Text {...FIXED_TEXT_PROPS} numberOfLines={2} style={nS.driverMiniPanelSub}>Activa GO para iniciar</Text>
 
-                <TouchableOpacity
-                  style={nS.driverReservasBtn}
-                  activeOpacity={0.82}
-                  onPress={() =>
-                    navigation.navigate('DriverReservations' as never, { initialTab: 'reservations' } as never)
-                  }
-                >
-                  <View style={nS.driverReservasBtnIcon}>
-                    <Ionicons name="calendar-outline" size={22} color="#051A26" />
-                  </View>
-                  <View style={nS.driverReservasBtnTextWrap}>
-                    <Text style={nS.driverReservasBtnTitle}>Reservas Disponibles</Text>
-                    <Text style={nS.driverReservasBtnSub}>Ver y aceptar reservas de clientes</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="rgba(0,229,255,0.7)" />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={nS.driverReservasBtn}
+                    activeOpacity={0.82}
+                    onPress={() =>
+                      navigation.navigate('DriverReservations' as never, { initialTab: 'reservations' } as never)
+                    }
+                  >
+                    <View style={nS.driverReservasBtnIcon}>
+                      <Ionicons name="calendar-outline" size={22} color="#051A26" />
+                    </View>
+                    <View style={nS.driverReservasBtnTextWrap}>
+                      <Text style={nS.driverReservasBtnTitle}>Reservas Disponibles</Text>
+                      <Text style={nS.driverReservasBtnSub}>Ver y aceptar reservas de clientes</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="rgba(0,229,255,0.7)" />
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -4841,13 +4849,15 @@ const nS = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  driverMiniPanel: {
+  driverOfflineStack: {
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 108,
-    zIndex: 20,
-    elevation: 20,
+    zIndex: 40,
+    elevation: 40,
+    gap: 8,
+  },
+  driverMiniPanel: {
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(0,229,255,0.24)',
