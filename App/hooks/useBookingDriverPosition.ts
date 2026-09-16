@@ -67,6 +67,10 @@ export function useBookingDriverPosition(bookingId: string | null | undefined): 
 
     fetchLatest();
 
+    // Polling de respaldo: Realtime a veces no re-suscribe tras remount y el
+    // carrito no aparece hasta reentrar. Refresco cada 4 s cubre ese hueco.
+    const pollId = setInterval(fetchLatest, 4000);
+
     // ── 2. Suscripción Realtime ────────────────────────────────────────────────
     // Nombre único por suscripción: si la pantalla se remonta (navegación,
     // hot reload, cambio de status que reinicia el efecto), reutilizar el mismo
@@ -106,6 +110,7 @@ export function useBookingDriverPosition(bookingId: string | null | undefined): 
     // ── 3. Cleanup ─────────────────────────────────────────────────────────────
     return () => {
       cancelled = true;
+      clearInterval(pollId);
       supabase.removeChannel(channel);
     };
   }, [bookingId]);

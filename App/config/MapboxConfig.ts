@@ -38,6 +38,7 @@ try {
     Camera: Empty,
     UserLocation: Empty,
     PointAnnotation: Passthrough,
+    MarkerView: Passthrough,
     ShapeSource: Passthrough,
     LineLayer: Empty,
     SymbolLayer: Empty,

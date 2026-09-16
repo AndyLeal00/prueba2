@@ -5,7 +5,11 @@
 // del SDK, porque en RN supabase.auth.getSession()/llamadas del SDK pueden
 // colgarse (deadlock del lock de auth). Las pantallas hacen polling con
 // fetchMessages() y envían con sendMessage().
+//
+// Unread: sin columna "read" en DB; se guarda lastReadAt en AsyncStorage por
+// booking+rol. countUnreadMessages cuenta mensajes del otro rol posteriores.
 // ============================================================================
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUPABASE_URL, getSupabaseAuthHeaders } from '@/config/SupabaseConfig';
 
 export type ChatRole = 'driver' | 'customer';
@@ -27,6 +31,9 @@ export interface SendMessageInput {
   senderName?: string | null;
   message: string;
 }
+
+const lastReadKey = (bookingId: string, role: ChatRole) =>
+  `chat_last_read_${bookingId}_${role}`;
 
 /**
  * Obtiene los mensajes de una reserva ordenados cronológicamente.
@@ -92,5 +99,43 @@ export const sendMessage = async (
   } catch (error) {
     console.error('chatService.sendMessage exception:', error);
     return null;
+  }
+};
+
+/** Marca el chat como leído para este booking + rol (al abrir OnlineChat). */
+export const markChatRead = async (
+  bookingId: string,
+  role: ChatRole
+): Promise<void> => {
+  if (!bookingId) return;
+  try {
+    await AsyncStorage.setItem(lastReadKey(bookingId, role), new Date().toISOString());
+  } catch (e) {
+    console.warn('chatService.markChatRead error:', e);
+  }
+};
+
+/**
+ * Cuenta mensajes del otro rol posteriores al lastRead local.
+ * Si la tabla no existe / falla fetch, retorna 0.
+ */
+export const countUnreadMessages = async (
+  bookingId: string,
+  myRole: ChatRole
+): Promise<number> => {
+  if (!bookingId) return 0;
+  try {
+    const [messages, raw] = await Promise.all([
+      fetchMessages(bookingId),
+      AsyncStorage.getItem(lastReadKey(bookingId, myRole)),
+    ]);
+    const lastReadMs = raw ? new Date(raw).getTime() : 0;
+    return messages.filter(
+      (m) =>
+        m.sender_role !== myRole &&
+        new Date(m.created_at).getTime() > lastReadMs
+    ).length;
+  } catch {
+    return 0;
   }
 };

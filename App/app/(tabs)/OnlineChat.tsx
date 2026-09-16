@@ -24,6 +24,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   fetchMessages,
   sendMessage as sendChatMessage,
+  markChatRead,
   ChatMessage,
   ChatRole,
 } from '@/common/services/chatService';
@@ -70,7 +71,9 @@ const ChatScreen = ({ navigation }: Props) => {
     const data = await fetchMessages(bookingId);
     setMessages(data);
     setLoading(false);
-  }, [bookingId]);
+    // Al ver el chat, reseteamos el badge de no leídos.
+    await markChatRead(bookingId, myRole);
+  }, [bookingId, myRole]);
 
   useEffect(() => {
     loadMessages();

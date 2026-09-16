@@ -31,6 +31,7 @@ import { shareTrip } from '@/common/utils/tripShare';
 import { addActualsToBooking } from '@/common/other/sharedFunctions';
 import { formatBookingFareRange } from '@/constants/fare';
 import { fetchAndSyncUserRating } from '@/common/utils/userRating';
+import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import StarRating from 'react-native-star-rating-widget';
 
 const NEQUI_LOGO_URI = 'https://img.logo.dev/nequi.com.co?token=pk_c_F6FSsGSaKey4lkmcDLNw';
@@ -194,6 +195,7 @@ const ReservationTripScreen = () => {
     inAppNavRef.current = inAppNav;
   }, [inAppNav]);
   const [customerPhoto, setCustomerPhoto] = useState<string | null>(null);
+  const unreadChatCount = useChatUnreadCount(reservation?.id, 'driver', !!reservation?.id);
   const [panelHeight, setPanelHeight] = useState(300);
   const [mapZoom, setMapZoom] = useState(17);
   const mapZoomRef = useRef(17);
@@ -1247,6 +1249,20 @@ const ReservationTripScreen = () => {
     }
   };
 
+  const openChat = () => {
+    nav.navigate('Chat', {
+      bookingId: reservation.id,
+      myRole: 'driver',
+      myName:
+        [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+        user?.first_name ||
+        user?.name ||
+        'Conductor',
+      senderId: user?.id || user?.auth_id || user?.uid,
+      otherName: reservation.customer_name || 'Cliente',
+    });
+  };
+
   const phaseConfig = {
     NAVIGATING_TO_PICKUP: {
       title: 'Ir al punto de recogida',
@@ -1466,9 +1482,21 @@ const ReservationTripScreen = () => {
               </View>
             )}
             <Text style={s.infoName}>{reservation.customer_name}</Text>
-            <TouchableOpacity style={s.callBtn} onPress={callCustomer} activeOpacity={0.75}>
-              <Ionicons name="call" size={16} color="#00E676" />
-            </TouchableOpacity>
+            <View style={s.actionBtnsRow}>
+              <TouchableOpacity style={s.chatBtn} onPress={openChat} activeOpacity={0.75}>
+                <Ionicons name="chatbubble-ellipses" size={16} color="#00E5FF" />
+                {unreadChatCount > 0 && (
+                  <View style={s.chatBadge}>
+                    <Text style={s.chatBadgeText}>
+                      {unreadChatCount > 99 ? '99+' : String(unreadChatCount)}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={s.callBtn} onPress={callCustomer} activeOpacity={0.75}>
+                <Ionicons name="call" size={16} color="#00E676" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={s.routeInfo}>
@@ -1959,6 +1987,32 @@ const s = StyleSheet.create({
   callBtn: {
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,230,118,0.12)', borderWidth: 1, borderColor: 'rgba(0,230,118,0.3)',
+  },
+  actionBtnsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chatBtn: {
+    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,229,255,0.12)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.35)',
+    position: 'relative',
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: '#E53935',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#051A26',
+  },
+  chatBadgeText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '800',
+    lineHeight: 11,
   },
   routeInfo: { marginBottom: 10 },
   routeRowItem: { flexDirection: 'row', alignItems: 'center' },
