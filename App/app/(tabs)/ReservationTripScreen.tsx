@@ -32,6 +32,7 @@ import { addActualsToBooking } from '@/common/other/sharedFunctions';
 import { formatBookingFareRange } from '@/constants/fare';
 import { fetchAndSyncUserRating } from '@/common/utils/userRating';
 import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
+import FloatingChatModal from '@/components/FloatingChatModal';
 import StarRating from 'react-native-star-rating-widget';
 
 const NEQUI_LOGO_URI = 'https://img.logo.dev/nequi.com.co?token=pk_c_F6FSsGSaKey4lkmcDLNw';
@@ -196,6 +197,7 @@ const ReservationTripScreen = () => {
   }, [inAppNav]);
   const [customerPhoto, setCustomerPhoto] = useState<string | null>(null);
   const unreadChatCount = useChatUnreadCount(reservation?.id, 'driver', !!reservation?.id);
+  const [chatVisible, setChatVisible] = useState(false);
   const [panelHeight, setPanelHeight] = useState(300);
   const [mapZoom, setMapZoom] = useState(17);
   const mapZoomRef = useRef(17);
@@ -1250,17 +1252,7 @@ const ReservationTripScreen = () => {
   };
 
   const openChat = () => {
-    nav.navigate('Chat', {
-      bookingId: reservation.id,
-      myRole: 'driver',
-      myName:
-        [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
-        user?.first_name ||
-        user?.name ||
-        'Conductor',
-      senderId: user?.id || user?.auth_id || user?.uid,
-      otherName: reservation.customer_name || 'Cliente',
-    });
+    setChatVisible(true);
   };
 
   const phaseConfig = {
@@ -1907,6 +1899,22 @@ const ReservationTripScreen = () => {
         message={alertMessage}
         buttons={alertButtons}
         onDismiss={() => setAlertVisible(false)}
+      />
+
+      <FloatingChatModal
+        visible={chatVisible}
+        onClose={() => setChatVisible(false)}
+        bookingId={reservation.id}
+        myRole="driver"
+        myName={
+          [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+          user?.first_name ||
+          user?.name ||
+          'Conductor'
+        }
+        senderId={user?.id || user?.auth_id || user?.uid}
+        otherName={reservation.customer_name || 'Cliente'}
+        otherPhoto={customerPhoto}
       />
     </View>
   );

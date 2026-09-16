@@ -35,6 +35,7 @@ import { haversineKm, formatDistanceAndEta, DistanceEtaState } from '@/common/se
 import { shareTrip } from '@/common/utils/tripShare';
 import { useAnimatedDriverMarker, fitPickupAndDriver, shouldRefitCamera } from '@/hooks/useAnimatedDriverMarker';
 import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
+import FloatingChatModal from '@/components/FloatingChatModal';
 import { formatBookingFareRange } from '@/constants/fare';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
@@ -165,6 +166,7 @@ const CustomerActiveTripScreen = () => {
     'customer',
     !!(booking?.id || bookingId)
   );
+  const [chatVisible, setChatVisible] = useState(false);
   const fadeAnimAlert = useRef(new Animated.Value(0)).current;
   const scaleAnimAlert = useRef(new Animated.Value(0.85)).current;
 
@@ -830,16 +832,7 @@ const CustomerActiveTripScreen = () => {
   const carMarkerCoords = animatedCoords || driverLocation;
 
   const openCustomerChat = () => {
-    nav.navigate('Chat', {
-      bookingId: booking.id,
-      myRole: 'customer',
-      myName:
-        booking.customer_name ||
-        [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
-        'Cliente',
-      senderId: booking.customer || booking.customer_id || user?.id,
-      otherName: booking.driver_name || 'Conductor',
-    });
+    setChatVisible(true);
   };
 
   return (
@@ -1948,6 +1941,21 @@ const CustomerActiveTripScreen = () => {
           </Animated.View>
         </View>
       </Modal>
+
+      <FloatingChatModal
+        visible={chatVisible}
+        onClose={() => setChatVisible(false)}
+        bookingId={booking.id}
+        myRole="customer"
+        myName={
+          booking.customer_name ||
+          [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+          'Cliente'
+        }
+        senderId={booking.customer || booking.customer_id || user?.id}
+        otherName={booking.driver_name || 'Conductor'}
+        otherPhoto={driverPhotoUri}
+      />
     </View>
   );
 };
