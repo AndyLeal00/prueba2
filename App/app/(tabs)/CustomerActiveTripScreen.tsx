@@ -975,20 +975,20 @@ const CustomerActiveTripScreen = () => {
             <Text style={s.statusText}>{statusText()}</Text>
             <Text style={s.referenceText}>Ref: {booking.reference}</Text>
             {tripNotificationActive ? (
-              <Text style={s.notificationHint}>🔔 Notificación activa en segundo plano. Toca para volver a esta pantalla.</Text>
+              <Text style={s.notificationHint}>Notificación activa en segundo plano. Toca para volver a esta pantalla.</Text>
             ) : null}
-            {/* 🆕 Precio del Servicio - Dinámico según estado */}
+            {/* Precio del Servicio - Dinámico según estado */}
             <View style={s.priceInStatus}>
               {booking.status === 'COMPLETE' ? (
                 <>
-                  <Text style={s.priceInStatusLabel}>💰 Valor Final Liquidado</Text>
+                  <Text style={s.priceInStatusLabel}>Valor Final Liquidado</Text>
                   <Text style={s.priceInStatusAmount}>
                     {formatBookingFareRange(booking)}
                   </Text>
                 </>
               ) : (
                 <>
-                  <Text style={s.priceInStatusLabel}>💰 Valor Estimado</Text>
+                  <Text style={s.priceInStatusLabel}>Valor Estimado</Text>
                   <Text style={s.priceInStatusAmount}>
                     {formatBookingFareRange(booking)}
                   </Text>
@@ -1118,12 +1118,12 @@ const CustomerActiveTripScreen = () => {
             
             <View style={s.routeBlock}>
               <View style={s.routeItem}>
-                <View style={[s.dot, { backgroundColor: '#00E676' }]} />
+                <View style={[s.dot, s.dotStart]} />
                 <Text style={s.address} numberOfLines={2}>{booking.pickup_address}</Text>
               </View>
               <View style={s.routeLine} />
               <View style={s.routeItem}>
-                <View style={[s.dot, { backgroundColor: '#E91E63' }]} />
+                <View style={[s.dot, s.dotEnd]} />
                 <Text style={s.address} numberOfLines={2}>{booking.drop_address}</Text>
               </View>
             </View>
@@ -1153,7 +1153,7 @@ const CustomerActiveTripScreen = () => {
             <View style={[s.card, s.waitingCard]}>
               <View style={s.waitingContent}>
                 <MaterialCommunityIcons name="clock-alert" size={32} color="#FFB300" />
-                <Text style={s.waitingTitle}>⏳ Conductor Esperando</Text>
+                <Text style={s.waitingTitle}>Conductor Esperando</Text>
                 <Text style={s.waitingSubtext}>Tu conductor ha llegado al punto de recogida</Text>
                 <Text style={s.waitingMessage}>Comparte tu código OTP con el conductor</Text>
               </View>
@@ -1188,7 +1188,7 @@ const CustomerActiveTripScreen = () => {
                   <Text style={s.otpCodeValue}>{booking.otp}</Text>
                 </View>
                 {booking.otp_verified
-                  ? <Text style={[s.otpCodeNote, { color: '#00E676' }]}>✅ Código verificado - Viaje iniciando</Text>
+                  ? <Text style={[s.otpCodeNote, { color: '#00E676' }]}>Código verificado - Viaje iniciando</Text>
                   : <Text style={s.otpCodeNote}>Tu conductor te pedirá este código</Text>
                 }
               </View>
@@ -1200,13 +1200,13 @@ const CustomerActiveTripScreen = () => {
         {booking.status === 'ACCEPTED' && booking.driver_name && (
           <Animatable.View animation="fadeInUp" duration={450} delay={120} useNativeDriver>
             <View style={s.card}>
-              <Text style={s.sectionTitle}>👤 Tu Conductor</Text>
+              <Text style={s.sectionTitle}>Tu Conductor</Text>
               
               {/* Conductor Info */}
               <View style={s.driverCard}>
                 <View style={s.driverInfo}>
                   <Text style={s.driverName}>{booking.driver_name}</Text>
-                  <Text style={s.driverPlate}>📞 {cleanNumberDisplay(driverInfo?.mobile || booking.driver_contact || 'Contacto no disponible')}</Text>
+                  <Text style={s.driverPlate}>{cleanNumberDisplay(driverInfo?.mobile || booking.driver_contact || 'Contacto no disponible')}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <TouchableOpacity
@@ -1235,7 +1235,7 @@ const CustomerActiveTripScreen = () => {
               {/* 🆕 Vehicle Info Card */}
               {(driverInfo?.vehicle_number || driverInfo?.vehicle_make || driverInfo?.vehicle_color || booking?.car_type) && (
                 <View style={{ backgroundColor: 'rgba(0,244,245,0.08)', borderRadius: 8, padding: 12, marginTop: 12, borderLeftWidth: 3, borderLeftColor: '#00E5FF' }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 10 }}>🚗 Información del Vehículo</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 10 }}>Información del Vehículo</Text>
 
                   {/* Placa */}
                   {driverInfo?.vehicle_number && (
@@ -1321,7 +1321,7 @@ const CustomerActiveTripScreen = () => {
                 {driverInfo?.mobile && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                     <Ionicons name="call-outline" size={16} color="#00E5FF" style={{ marginRight: 10 }} />
-                    <Text style={{ color: '#FFF', fontSize: 13, flex: 1 }}>☎️ {cleanNumberDisplay(driverInfo.mobile)}</Text>
+                    <Text style={{ color: '#FFF', fontSize: 13, flex: 1 }}>{cleanNumberDisplay(driverInfo.mobile)}</Text>
                     <TouchableOpacity 
                       onPress={() => Linking.openURL(`tel:${cleanNumberDisplay(driverInfo.mobile)}`)}
                       style={{ paddingHorizontal: 8 }}
@@ -1344,7 +1344,7 @@ const CustomerActiveTripScreen = () => {
                       <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Método de Pago</Text>
                     </View>
                     <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '600', marginLeft: 26 }}>
-                      {booking.payment_mode === 'cash' ? '💵 Efectivo' : booking.payment_mode === 'nequi' ? '📱 Nequi' : '💳 Daviplata'}
+                      {booking.payment_mode === 'cash' ? 'Efectivo' : booking.payment_mode === 'nequi' ? 'Nequi' : 'Daviplata'}
                     </Text>
                   </View>
                 )}
@@ -1353,7 +1353,7 @@ const CustomerActiveTripScreen = () => {
                 {(booking.payment_mode === 'nequi' || booking.payment_mode === 'daviplata') && (driverInfo?.mobile || booking.driver_payment_number || driverInfo?.bankAccount) && (
                   <View style={{ backgroundColor: 'rgba(0,244,245,0.08)', borderRadius: 8, padding: 12, borderLeftWidth: 3, borderLeftColor: '#00E5FF' }}>
                     <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 8 }}>
-                      💰 Transferir a:
+                      Transferir a:
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Text style={{ color: '#00F4F5', fontSize: 16, fontWeight: '700', letterSpacing: 2 }}>
@@ -1394,23 +1394,23 @@ const CustomerActiveTripScreen = () => {
           <Animatable.View animation="fadeInUp" duration={450} useNativeDriver>
             <View style={[s.card, s.verifiedCard]}>
               <Ionicons name="checkmark-circle" size={32} color="#00E676" />
-              <Text style={s.verifiedText}>✅ Viaje Verificado</Text>
+              <Text style={s.verifiedText}>Viaje Verificado</Text>
               <Text style={s.verifiedSub}>Tu viaje será iniciado próximamente</Text>
             </View>
           </Animatable.View>
         )}
 
-        {/* 🆕 Información de Viaje - Durante TRIP_STARTED */}
+        {/* Información de Viaje - Durante TRIP_STARTED */}
         {(booking.status === 'IN_PROGRESS' || booking.status === 'STARTED' || booking.status === 'TRIP_STARTED') ? (
           <Animatable.View animation="fadeInUp" duration={450} useNativeDriver>
             <View style={s.card}>
-              <Text style={s.sectionTitle}>📋 Información de tu Viaje</Text>
+              <Text style={s.sectionTitle}>Información de tu Viaje</Text>
 
               {/* Teléfono del Conductor */}
               {driverInfo?.mobile && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
                   <Ionicons name="call-outline" size={16} color="#00E5FF" style={{ marginRight: 10 }} />
-                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, flex: 1 }}>☎️ Conductor: {cleanNumberDisplay(driverInfo.mobile)}</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, flex: 1 }}>Conductor: {cleanNumberDisplay(driverInfo.mobile)}</Text>
                   <TouchableOpacity 
                     onPress={() => Linking.openURL(`tel:${cleanNumberDisplay(driverInfo.mobile)}`)}
                     style={{ paddingHorizontal: 8 }}
@@ -1434,7 +1434,7 @@ const CustomerActiveTripScreen = () => {
                       style={{ marginRight: 10 }} 
                     />
                     <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '600' }}>
-                      {booking.payment_mode === 'cash' ? '💵 Pago en Efectivo' : booking.payment_mode === 'nequi' ? '📱 Pago por Nequi' : '💳 Pago por Daviplata'}
+                      {booking.payment_mode === 'cash' ? 'Pago en Efectivo' : booking.payment_mode === 'nequi' ? 'Pago por Nequi' : 'Pago por Daviplata'}
                     </Text>
                   </View>
                 </View>
@@ -1444,7 +1444,7 @@ const CustomerActiveTripScreen = () => {
               {(booking.payment_mode === 'nequi' || booking.payment_mode === 'daviplata') && (driverInfo?.mobile || booking.driver_payment_number || driverInfo?.bankAccount) && (
                 <View style={{ backgroundColor: 'rgba(0,244,245,0.08)', borderRadius: 8, padding: 12, borderLeftWidth: 3, borderLeftColor: '#00E5FF' }}>
                   <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 8 }}>
-                    💰 Transferir a este número:
+                    Transferir a este número:
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={{ color: '#00F4F5', fontSize: 16, fontWeight: '700', letterSpacing: 2 }}>
@@ -1962,6 +1962,16 @@ const s = StyleSheet.create({
   routeBlock: { marginBottom: 10 },
   routeItem: { flexDirection: 'row', alignItems: 'center', marginVertical: 6 },
   dot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
+  dotStart: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#00E5FF',
+  },
+  dotEnd: {
+    backgroundColor: '#E91E63',
+    borderWidth: 2,
+    borderColor: '#00E5FF',
+  },
   address: { fontSize: 14, color: '#FFF', flex: 1 },
   routeLine: { height: 20, width: 2, backgroundColor: 'rgba(0,229,255,0.3)', marginLeft: 4, marginVertical: 2 },
   divider: { height: 1, backgroundColor: 'rgba(0,229,255,0.1)', marginVertical: 10 },

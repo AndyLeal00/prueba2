@@ -16,6 +16,7 @@ import { RootState } from "@/common/store";
 import { Platform, StyleSheet, View, ActivityIndicator } from "react-native";
 import CustomerBottomNav from "@/components/CustomerBottomNav";
 import DriverBottomNav from "@/components/DriverBottomNav";
+import ActiveTripFloatingBanner from "@/components/ActiveTripFloatingBanner";
 
 const CustomerTabs = createMaterialTopTabNavigator();
 const DriverTabs = createMaterialTopTabNavigator();
@@ -63,6 +64,7 @@ const CustomerTabNavigator: React.FC = () => {
         <CustomerTabs.Screen name="Lugares" component={SearchScreen} options={{ title: "Lugares" }} />
         <CustomerTabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Perfil" }} />
       </CustomerTabs.Navigator>
+      <ActiveTripFloatingBanner />
     </View>
   );
 };
@@ -93,6 +95,7 @@ const DriverTabNavigator: React.FC = () => {
         <DriverTabs.Screen name="Historial" component={DriverActivityScreen} options={{ title: "Historial" }} />
         <DriverTabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Perfil" }} />
       </DriverTabs.Navigator>
+      <ActiveTripFloatingBanner />
     </View>
   );
 };

@@ -19,6 +19,8 @@ import { GOOGLE_MAPS_DARK_STYLE } from '@/config/googleMapsDarkStyle';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
 const GOOGLE_MAPS_APIKEY = API_KEY;
+const NEQUI_LOGO_URI = 'https://img.logo.dev/nequi.com.co?token=pk_c_F6FSsGSaKey4lkmcDLNw';
+const DAVIPLATA_LOGO_URI = 'https://img.logo.dev/daviplata.com?token=pk_c_F6FSsGSaKey4lkmcDLNw';
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -768,13 +770,15 @@ Te confirmo, estos son los datos de tu servicio:
             </View>
 
             <View style={s.paymentRow}>
-              {reservation.payment_mode === 'nequi' ? (
-                <MaterialIcons name="phone" size={18} color="#00E5FF" />
-              ) : reservation.payment_mode === 'daviplata' ? (
-                <MaterialIcons name="account-balance-wallet" size={18} color="#00E5FF" />
-              ) : (
-                <Ionicons name="cash-outline" size={18} color="#00E5FF" />
-              )}
+              <View style={s.payLogoBox}>
+                {reservation.payment_mode === 'nequi' ? (
+                  <Image source={{ uri: NEQUI_LOGO_URI }} style={s.payLogoImg} />
+                ) : reservation.payment_mode === 'daviplata' ? (
+                  <Image source={{ uri: DAVIPLATA_LOGO_URI }} style={s.payLogoImg} />
+                ) : (
+                  <Ionicons name="cash-outline" size={16} color="#16A34A" />
+                )}
+              </View>
               <Text style={s.paymentLabel}>Método de pago:</Text>
               <Text style={s.paymentValue}>
                 {getPaymentMethodLabel(reservation.payment_mode || 'cash')}
@@ -1133,6 +1137,16 @@ const s = StyleSheet.create({
     borderTopColor: 'rgba(0,229,255,0.12)',
     gap: 8,
   },
+  payLogoBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  payLogoImg: { width: 18, height: 18 },
   paymentLabel: {
     fontSize: 12,
     fontWeight: '600',

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import CustomAlert, { AlertButton } from '@/components/CustomAlert';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,7 +18,7 @@ import supabase from '@/config/SupabaseConfig';
 import { activeTripBookings } from '@/hooks/useDriverCancellationWatcher';
 import { GOOGLE_MAPS_DARK_STYLE } from '@/config/googleMapsDarkStyle';
 import { API_KEY, getMapboxAccessToken } from '@/config/AppConfig';
-// Agora disabled for build - import { AGORA_APP_ID } from '@/config/AgoraConfig';
+import { DRIVER_LOCATION_PUCK_IMAGE } from '@/components/DriverMapLocationMarker';
 import { updateDriverNotification, showDriverActiveNotification } from '@/hooks/DriverNotificationService';
 import DriverOtpVerificationModal from '@/components/DriverOtpVerificationModal';
 import { useDriverTracking } from '@/hooks/useDriverTracking';
@@ -32,6 +32,10 @@ import { addActualsToBooking } from '@/common/other/sharedFunctions';
 import { formatBookingFareRange } from '@/constants/fare';
 import { fetchAndSyncUserRating } from '@/common/utils/userRating';
 import StarRating from 'react-native-star-rating-widget';
+
+const NEQUI_LOGO_URI = 'https://img.logo.dev/nequi.com.co?token=pk_c_F6FSsGSaKey4lkmcDLNw';
+const DAVIPLATA_LOGO_URI = 'https://img.logo.dev/daviplata.com?token=pk_c_F6FSsGSaKey4lkmcDLNw';
+const ROUTE_LINE_BLUE = '#00E5FF';
 
 const { width, height } = Dimensions.get('window');
 const BG_IMAGE = require('../../assets/images/bg.png');
@@ -154,6 +158,13 @@ const ReservationTripScreen = () => {
     return 'NAVIGATING_TO_PICKUP';
   });
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [driverHeading, setDriverHeading] = useState(0);
+  const [driverAccuracy, setDriverAccuracy] = useState(30);
+  const [areaPulse, setAreaPulse] = useState(0.5);
+  const [inAppNav, setInAppNav] = useState(false);
+  const [customerPhoto, setCustomerPhoto] = useState<string | null>(null);
+  const [endpointTracks, setEndpointTracks] = useState(true);
+  const mapZoomRef = useRef(17);
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [distanceToPickup, setDistanceToPickup] = useState<number | null>(null);
@@ -289,10 +300,16 @@ const ReservationTripScreen = () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+        { accuracy: Location.Accuracy.High, distanceInterval: 5, timeInterval: 2000 },
         loc => {
           const pos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
           setDriverLocation(pos);
+          if (typeof loc.coords.heading === 'number' && loc.coords.heading >= 0) {
+            setDriverHeading(loc.coords.heading);
+          }
+          if (typeof loc.coords.accuracy === 'number' && loc.coords.accuracy > 0) {
+            setDriverAccuracy(Math.min(Math.max(loc.coords.accuracy, 12), 120));
+          }
           if (pickupLat && pickupLng) {
             setDistanceToPickup(getDistanceMeters(pos.latitude, pos.longitude, pickupLat, pickupLng));
           }
@@ -301,6 +318,73 @@ const ReservationTripScreen = () => {
     })();
     return () => { sub?.remove(); };
   }, [pickupLat, pickupLng]);
+
+  // Halo de precisión (mismo efecto parpadeante del mapa principal)
+  useEffect(() => {
+    let frame = 0;
+    const start = Date.now();
+    const tick = () => {
+      const t = (Date.now() - start) / 1800;
+      setAreaPulse(0.5 + 0.5 * Math.sin(t * Math.PI * 2));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // Foto del cliente
+  useEffect(() => {
+    let cancelled = false;
+    const pickPhoto = (...candidates: Array<string | null | undefined>) => {
+      for (const c of candidates) {
+        const u = String(c || '').trim();
+        if (u.startsWith('http') || u.startsWith('file:') || u.startsWith('content:')) return u;
+      }
+      return null;
+    };
+    const load = async () => {
+      const fallback = pickPhoto(reservation?.customer_image, reservation?.profile_image);
+      if (!cancelled && fallback) setCustomerPhoto(fallback);
+      const targetId = String(reservation?.customer_id || reservation?.customer || '').trim();
+      if (!targetId) return;
+      try {
+        const headers = await getSupabaseAuthHeaders();
+        const url =
+          `${SUPABASE_URL}/rest/v1/users` +
+          `?or=(id.eq.${encodeURIComponent(targetId)},auth_id.eq.${encodeURIComponent(targetId)})` +
+          `&select=profile_image&limit=1`;
+        const res = await fetch(url, { headers });
+        if (!res.ok) return;
+        const rows = await res.json();
+        const u = Array.isArray(rows) ? rows[0] : null;
+        const photo = pickPhoto(u?.profile_image, fallback);
+        if (!cancelled && photo) setCustomerPhoto(photo);
+      } catch {}
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [reservation?.customer_id, reservation?.customer, reservation?.customer_image]);
+
+  // Android: View markers necesitan tracksViewChanges un momento para pintar
+  useEffect(() => {
+    setEndpointTracks(true);
+    const t = setTimeout(() => setEndpointTracks(false), 800);
+    return () => clearTimeout(t);
+  }, [pickupLat, pickupLng, dropLat, dropLng, phase]);
+
+  // Navegación in-app tipo Waze: sigue al conductor con el puck
+  useEffect(() => {
+    if (!inAppNav || !driverLocation || !mapRef.current) return;
+    mapRef.current.animateCamera(
+      {
+        center: driverLocation,
+        heading: driverHeading || 0,
+        pitch: 45,
+        zoom: mapZoomRef.current,
+      },
+      { duration: 500 },
+    );
+  }, [inAppNav, driverLocation?.latitude, driverLocation?.longitude, driverHeading]);
 
   // Mientras esta pantalla esté montada, "posee" su booking: el watcher global
   // (useDriverCancellationWatcher) ignora este id para no duplicar el modal.
@@ -939,6 +1023,7 @@ const ReservationTripScreen = () => {
 
   // Open Google Maps navigation
   const openNavigation = () => {
+    setInAppNav(false);
     let destLat: number, destLng: number;
     if (phase === 'NAVIGATING_TO_PICKUP' || phase === 'ARRIVED_AT_PICKUP') {
       destLat = pickupLat;
@@ -953,6 +1038,7 @@ const ReservationTripScreen = () => {
 
   // Open Waze navigation
   const openWaze = () => {
+    setInAppNav(false);
     let destLat: number, destLng: number;
     if (phase === 'NAVIGATING_TO_PICKUP' || phase === 'ARRIVED_AT_PICKUP') {
       destLat = pickupLat;
@@ -963,6 +1049,61 @@ const ReservationTripScreen = () => {
     }
     const url = `https://waze.com/ul?ll=${destLat},${destLng}&navigate=yes`;
     Linking.openURL(url);
+  };
+
+  const startInAppNav = () => {
+    setInAppNav(true);
+    if (driverLocation && mapRef.current) {
+      mapZoomRef.current = 18;
+      mapRef.current.animateCamera(
+        {
+          center: driverLocation,
+          heading: driverHeading || 0,
+          pitch: 45,
+          zoom: 18,
+        },
+        { duration: 600 },
+      );
+    }
+  };
+
+  const locateOnMap = () => {
+    if (!driverLocation || !mapRef.current) return;
+    mapRef.current.animateCamera(
+      {
+        center: driverLocation,
+        heading: inAppNav ? (driverHeading || 0) : 0,
+        pitch: inAppNav ? 45 : 0,
+        zoom: mapZoomRef.current,
+      },
+      { duration: 400 },
+    );
+  };
+
+  const zoomBy = (delta: number) => {
+    mapZoomRef.current = Math.min(21, Math.max(12, mapZoomRef.current + delta));
+    if (!mapRef.current) return;
+    const center = driverLocation || (pickupLat ? { latitude: pickupLat, longitude: pickupLng } : null);
+    if (!center) return;
+    mapRef.current.animateCamera(
+      {
+        center,
+        heading: inAppNav ? (driverHeading || 0) : 0,
+        pitch: inAppNav ? 45 : 0,
+        zoom: mapZoomRef.current,
+      },
+      { duration: 250 },
+    );
+  };
+
+  const renderPaymentIcon = (size = 14) => {
+    if (paymentMode === 'nequi') {
+      return <Image source={{ uri: NEQUI_LOGO_URI }} style={{ width: size, height: size, borderRadius: 3 }} />;
+    }
+    if (paymentMode === 'daviplata') {
+      return <Image source={{ uri: DAVIPLATA_LOGO_URI }} style={{ width: size, height: size, borderRadius: 3 }} />;
+    }
+    return <Ionicons name="cash-outline" size={size} color="#00E676" />;
   };
 
   // Call customer - Usando Agora UIKit
@@ -1049,52 +1190,45 @@ const ReservationTripScreen = () => {
           latitudeDelta: 0.03,
           longitudeDelta: 0.03,
         }}
-        showsUserLocation
+        showsUserLocation={false}
         showsMyLocationButton={false}
         customMapStyle={GOOGLE_MAPS_DARK_STYLE}
+        rotateEnabled
+        pitchEnabled
       >
-        {/* Pickup marker */}
-        {pickupLat && pickupLng && (
-          <Marker
-            coordinate={{ latitude: pickupLat, longitude: pickupLng }}
-            title="Recoger"
-            description={reservation.pickup_address}
-          >
-            <View style={s.markerWrap}>
-              <View style={[s.markerDot, { backgroundColor: '#00E676' }]}>
-                <Ionicons name="person" size={14} color="#FFF" />
-              </View>
-              {phase === 'NAVIGATING_TO_PICKUP' && <Text style={s.markerLabel}>Recoger aquí</Text>}
-            </View>
-          </Marker>
+        {/* Driver puck + halo parpadeante */}
+        {driverLocation && (
+          <>
+            <Circle
+              center={driverLocation}
+              radius={driverAccuracy * (0.85 + areaPulse * 0.35)}
+              fillColor={`rgba(0, 229, 255, ${0.08 + areaPulse * 0.1})`}
+              strokeColor={`rgba(0, 229, 255, ${0.22 + areaPulse * 0.14})`}
+              strokeWidth={1}
+              zIndex={1}
+            />
+            <Marker
+              coordinate={driverLocation}
+              anchor={{ x: 0.5, y: 0.5 }}
+              flat
+              rotation={driverHeading || 0}
+              tracksViewChanges={false}
+              zIndex={10}
+              image={DRIVER_LOCATION_PUCK_IMAGE}
+            />
+          </>
         )}
 
-        {/* Drop marker */}
-        {dropLat && dropLng && (phase === 'TRIP_STARTED' || phase === 'ARRIVED_AT_PICKUP') && (
-          <Marker
-            coordinate={{ latitude: dropLat, longitude: dropLng }}
-            title="Destino"
-            description={reservation.drop_address}
-          >
-            <View style={s.markerWrap}>
-              <View style={[s.markerDot, { backgroundColor: '#E91E63' }]}>
-                <Ionicons name="flag" size={14} color="#FFF" />
-              </View>
-              {phase === 'TRIP_STARTED' && <Text style={s.markerLabel}>Destino</Text>}
-            </View>
-          </Marker>
-        )}
-
-        {/* Route polyline: borde azul + línea + puntas inicio/fin */}
+        {/* Route polyline */}
         {routeCoords.length > 1 && (
           <>
             <Polyline
               coordinates={routeCoords}
               strokeWidth={8}
-              strokeColor="#00E5FF"
+              strokeColor={ROUTE_LINE_BLUE}
               lineJoin="round"
               lineCap="round"
-              zIndex={1}
+              zIndex={2}
             />
             <Polyline
               coordinates={routeCoords}
@@ -1102,27 +1236,55 @@ const ReservationTripScreen = () => {
               strokeColor="#00E676"
               lineJoin="round"
               lineCap="round"
-              zIndex={2}
+              zIndex={3}
             />
-            <Marker
-              coordinate={routeCoords[0]}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-              zIndex={4}
-            >
-              <View style={s.routeEndpointStart} />
-            </Marker>
-            <Marker
-              coordinate={routeCoords[routeCoords.length - 1]}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-              zIndex={5}
-            >
-              <View style={s.routeEndpointEnd} />
-            </Marker>
           </>
         )}
+
+        {/* Marcadores inicio/fin del servicio (siempre pickup/drop) */}
+        {pickupLat != null && pickupLng != null && (
+          <Marker
+            coordinate={{ latitude: pickupLat, longitude: pickupLng }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={endpointTracks}
+            zIndex={6}
+          >
+            <View style={s.routeEndpointStart} />
+          </Marker>
+        )}
+        {dropLat != null && dropLng != null && (
+          <Marker
+            coordinate={{ latitude: dropLat, longitude: dropLng }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={endpointTracks}
+            zIndex={7}
+          >
+            <View style={s.routeEndpointEnd} />
+          </Marker>
+        )}
       </MapView>
+
+      {/* Controles zoom / ubicar */}
+      <View style={[s.mapZoomControls, { bottom: Math.max(insets.bottom, 16) + 290 }]} pointerEvents="box-none">
+        <TouchableOpacity style={s.mapCtrlBtn} onPress={() => zoomBy(1)} activeOpacity={0.85}>
+          <Ionicons name="add" size={22} color="#00E5FF" />
+        </TouchableOpacity>
+        <TouchableOpacity style={s.mapCtrlBtn} onPress={() => zoomBy(-1)} activeOpacity={0.85}>
+          <Ionicons name="remove" size={22} color="#00E5FF" />
+        </TouchableOpacity>
+      </View>
+      <View style={[s.mapSideControls, { bottom: Math.max(insets.bottom, 16) + 290 }]} pointerEvents="box-none">
+        <TouchableOpacity
+          style={[s.mapCtrlBtn, inAppNav && s.mapCtrlBtnOn]}
+          onPress={() => (inAppNav ? setInAppNav(false) : startInAppNav())}
+          activeOpacity={0.85}
+        >
+          <Image source={DRIVER_LOCATION_PUCK_IMAGE} style={s.mapCtrlPuck} />
+        </TouchableOpacity>
+        <TouchableOpacity style={s.mapCtrlBtn} onPress={locateOnMap} activeOpacity={0.85}>
+          <Ionicons name="locate" size={20} color="#00E5FF" />
+        </TouchableOpacity>
+      </View>
 
       {/* Top bar */}
       <View style={[s.topBar, { paddingTop: Math.max(insets.top, 20) + 6 }]}>
@@ -1180,7 +1342,13 @@ const ReservationTripScreen = () => {
         {/* Reservation info summary */}
         <View style={s.infoCard}>
           <View style={s.infoRow}>
-            <Ionicons name="person" size={16} color="#00E5FF" />
+            {customerPhoto ? (
+              <Image source={{ uri: customerPhoto }} style={s.customerAvatar} />
+            ) : (
+              <View style={s.customerAvatarFallback}>
+                <Ionicons name="person" size={14} color="#00E5FF" />
+              </View>
+            )}
             <Text style={s.infoName}>{reservation.customer_name}</Text>
             <TouchableOpacity style={s.callBtn} onPress={callCustomer} activeOpacity={0.75}>
               <Ionicons name="call" size={16} color="#00E676" />
@@ -1189,12 +1357,12 @@ const ReservationTripScreen = () => {
 
           <View style={s.routeInfo}>
             <View style={s.routeRowItem}>
-              <View style={[s.routeDot, { backgroundColor: '#00E676' }]} />
+              <View style={s.routeDotStart} />
               <Text style={s.routeText} numberOfLines={1}>{reservation.pickup_address}</Text>
             </View>
             <View style={s.routeDash} />
             <View style={s.routeRowItem}>
-              <View style={[s.routeDot, { backgroundColor: '#E91E63' }]} />
+              <View style={s.routeDotEnd} />
               <Text style={s.routeText} numberOfLines={1}>{reservation.drop_address}</Text>
             </View>
           </View>
@@ -1202,7 +1370,7 @@ const ReservationTripScreen = () => {
           <View style={s.metaRow}>
             {/* 🆕 Precio más prominente - Dinámico según estado */}
             <View style={s.priceHighlight}>
-              <Ionicons name="cash" size={16} color="#00E5FF" />
+              <Ionicons name="cash-outline" size={14} color="#00E5FF" />
               <Text style={s.priceHighlightText}>
                 {formatBookingFareRange(reservation)}
               </Text>
@@ -1213,11 +1381,9 @@ const ReservationTripScreen = () => {
             <Text style={s.metaItem}>{formatTime(reservation.booking_date)}</Text>
             <Text style={s.metaDivider}>•</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Ionicons
-                name={paymentMode === 'cash' ? 'cash-outline' : paymentMode === 'nequi' ? 'phone-portrait-outline' : 'wallet-outline'}
-                size={13}
-                color={paymentMode === 'cash' ? '#00E676' : '#00E5FF'}
-              />
+              <View style={s.payIconBox}>
+                {renderPaymentIcon(12)}
+              </View>
               <Text style={[s.metaItem, { color: paymentMode === 'cash' ? '#00E676' : '#00E5FF' }]}>{paymentLabel}</Text>
             </View>
           </View>
@@ -1225,12 +1391,20 @@ const ReservationTripScreen = () => {
 
         {/* Navigation buttons */}
         <View style={s.navRow}>
+          <TouchableOpacity
+            style={[s.navBtn, inAppNav && s.navBtnActive]}
+            onPress={() => (inAppNav ? setInAppNav(false) : startInAppNav())}
+            activeOpacity={0.8}
+          >
+            <Image source={DRIVER_LOCATION_PUCK_IMAGE} style={s.navPuckIcon} />
+            <Text style={s.navBtnTxt}>{inAppNav ? 'Navegando' : 'Navegar'}</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={s.navBtn} onPress={openNavigation} activeOpacity={0.8}>
-            <Ionicons name="navigate" size={18} color="#FFF" />
-            <Text style={s.navBtnTxt}>Google Maps</Text>
+            <Ionicons name="navigate" size={16} color="#FFF" />
+            <Text style={s.navBtnTxt}>Maps</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.navBtn, s.navBtnWaze]} onPress={openWaze} activeOpacity={0.8}>
-            <Ionicons name="compass" size={18} color="#FFF" />
+            <Ionicons name="compass" size={16} color="#FFF" />
             <Text style={s.navBtnTxt}>Waze</Text>
           </TouchableOpacity>
         </View>
@@ -1249,13 +1423,11 @@ const ReservationTripScreen = () => {
                 {formatBookingFareRange(reservation)}
               </Text>
               <View style={s.priceCardPayment}>
-                <Ionicons
-                  name={paymentMode === 'cash' ? 'cash-outline' : paymentMode === 'nequi' ? 'phone-portrait-outline' : 'wallet-outline'}
-                  size={16}
-                  color={paymentMode === 'cash' ? '#00E676' : '#00E5FF'}
-                />
+                <View style={s.payIconBoxLg}>
+                  {renderPaymentIcon(16)}
+                </View>
                 <Text style={s.priceCardPaymentText}>
-                  {paymentMode === 'cash' ? '💵 Pago en Efectivo' : paymentMode === 'nequi' ? '📱 Pago por Nequi' : '💳 Pago por Daviplata'}
+                  {paymentMode === 'cash' ? 'Pago en Efectivo' : paymentMode === 'nequi' ? 'Pago por Nequi' : 'Pago por Daviplata'}
                 </Text>
               </View>
               {paymentMode !== 'cash' && (
@@ -1681,6 +1853,22 @@ const s = StyleSheet.create({
   infoCard: { marginBottom: 14 },
   infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   infoName: { fontSize: 16, fontWeight: '700', color: '#FFF', flex: 1, marginLeft: 8 },
+  customerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,229,255,0.12)',
+  },
+  customerAvatarFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,229,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,255,0.3)',
+  },
   callBtn: {
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,230,118,0.12)', borderWidth: 1, borderColor: 'rgba(0,230,118,0.3)',
@@ -1688,11 +1876,27 @@ const s = StyleSheet.create({
   routeInfo: { marginBottom: 10 },
   routeRowItem: { flexDirection: 'row', alignItems: 'center' },
   routeDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
+  routeDotStart: {
+    width: 8, height: 8, borderRadius: 4, marginRight: 10,
+    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#00E5FF',
+  },
+  routeDotEnd: {
+    width: 8, height: 8, borderRadius: 4, marginRight: 10,
+    backgroundColor: '#E91E63', borderWidth: 1.5, borderColor: '#00E5FF',
+  },
   routeText: { fontSize: 13, color: 'rgba(255,255,255,0.75)', flex: 1, fontWeight: '500' },
   routeDash: { width: 1, height: 10, backgroundColor: 'rgba(255,255,255,0.15)', marginLeft: 3.5, marginVertical: 2 },
-  metaRow: { flexDirection: 'row', alignItems: 'center' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   metaItem: { fontSize: 12, color: '#00E5FF', fontWeight: '600' },
   metaDivider: { fontSize: 12, color: 'rgba(255,255,255,0.2)', marginHorizontal: 8 },
+  payIconBox: {
+    width: 18, height: 18, borderRadius: 5, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  payIconBoxLg: {
+    width: 28, height: 28, borderRadius: 8, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
   priceHighlight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1711,14 +1915,46 @@ const s = StyleSheet.create({
     letterSpacing: 0.5,
   },
   /* Nav buttons */
-  navRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  navRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   navBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, borderRadius: 14, gap: 6,
+    paddingVertical: 10, borderRadius: 14, gap: 5,
     backgroundColor: 'rgba(0,229,255,0.15)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.3)',
   },
+  navBtnActive: {
+    backgroundColor: 'rgba(0,229,255,0.28)',
+    borderColor: '#00E5FF',
+  },
   navBtnWaze: { backgroundColor: 'rgba(51,153,255,0.15)', borderColor: 'rgba(51,153,255,0.3)' },
-  navBtnTxt: { fontSize: 13, fontWeight: '700', color: '#FFF' },
+  navBtnTxt: { fontSize: 12, fontWeight: '700', color: '#FFF' },
+  navPuckIcon: { width: 18, height: 18 },
+  mapZoomControls: {
+    position: 'absolute',
+    right: 14,
+    zIndex: 30,
+    gap: 10,
+  },
+  mapSideControls: {
+    position: 'absolute',
+    left: 14,
+    zIndex: 30,
+    gap: 10,
+  },
+  mapCtrlBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(10,46,61,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,255,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapCtrlBtnOn: {
+    borderColor: '#00E5FF',
+    backgroundColor: 'rgba(0,229,255,0.22)',
+  },
+  mapCtrlPuck: { width: 26, height: 26 },
   /* Action buttons */
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1762,17 +1998,17 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
   },
   routeEndpointStart: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#FFFFFF',
     borderWidth: 2.5,
     borderColor: '#00E5FF',
   },
   routeEndpointEnd: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#E91E63',
     borderWidth: 2.5,
     borderColor: '#00E5FF',

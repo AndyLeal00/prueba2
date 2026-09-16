@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image,
-  ActivityIndicator, RefreshControl, Platform, Dimensions,
+  ActivityIndicator, RefreshControl, Platform, Dimensions, Modal, ScrollView,
 } from 'react-native';
 import CustomAlert, { AlertButton } from '@/components/CustomAlert';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Animatable from 'react-native-animatable';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { RootState } from '@/common/store';
 import { selectDriverOnline } from '@/components/DriverBottomNav';
 import { invokeDriverGoActivate, invokeDriverGoDeactivate } from '@/common/utils/driverGoBridge';
@@ -19,11 +20,46 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, getSupabaseAuthHeaders } from '@/confi
 import { updateDriverNotification, notifyNewBooking } from '@/hooks/DriverNotificationService';
 import { fetchMemberships } from '@/common/reducers/membershipSlice';
 import { toCanonicalCarType } from '@/common/utils/carType';
-import { formatBookingFareRange } from '@/constants/fare';
+import { formatBookingFareRange, getBookingFareRange } from '@/constants/fare';
+import { API_KEY } from '@/config/AppConfig';
+import { GOOGLE_MAPS_DARK_STYLE } from '@/config/googleMapsDarkStyle';
 
 const IMMEDIATE_RANGE_KM = 3;
+const ROUTE_LINE_BLUE = '#00E5FF';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
+
+type LatLng = { latitude: number; longitude: number };
+
+const decodePolyline = (encoded: string): LatLng[] => {
+  const coordinates: LatLng[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  while (index < encoded.length) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+    coordinates.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return coordinates;
+};
 
 const sendPushNotification = async (token: string, title: string, body: string) => {
   if (!token) return;
@@ -90,9 +126,12 @@ const formatTime = (ts: string) => {
     const ampm = h >= 12 ? 'p. m.' : 'a. m.';
     if (h > 12) h -= 12;
     if (h === 0) h = 12;
-    return `${h}:${m}:00 ${ampm}`;
+    return `${h}:${m} ${ampm}`;
   } catch { return ts || ''; }
 };
+
+const moneyFmt = (n: number) =>
+  Math.round(n || 0).toLocaleString('es-CO');
 
 const isUuid = (value?: string | null) => {
   if (!value) return false;
@@ -190,6 +229,11 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
+  const [detailItem, setDetailItem] = useState<any | null>(null);
+  const [detailRouteCoords, setDetailRouteCoords] = useState<LatLng[]>([]);
+  const [detailRouteLoading, setDetailRouteLoading] = useState(false);
+  const [customerPhotos, setCustomerPhotos] = useState<Record<string, string>>({});
+  const detailMapRef = useRef<MapView | null>(null);
   const [activeCarType, setActiveCarType] = useState<string | null>(null);
 
   /* ── Tab selector: Reservas vs Inmediatos ── */
@@ -805,107 +849,184 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
     return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   };
 
+  const resolveCustomerPhoto = useCallback((item: any) => {
+    const id = String(item?.customer_id || item?.customer || '').trim();
+    if (id && customerPhotos[id]) return customerPhotos[id];
+    const direct = String(item?.customer_image || item?.profile_image || '').trim();
+    if (direct.startsWith('http')) return direct;
+    return null;
+  }, [customerPhotos]);
+
+  // Enrich customer profile photos for visible cards
+  useEffect(() => {
+    let cancelled = false;
+    const list = activeTab === 'immediate' ? immediateServices : reservations;
+    const ids = Array.from(
+      new Set(
+        list
+          .map((it: any) => String(it?.customer_id || it?.customer || '').trim())
+          .filter(Boolean)
+          .filter((id) => !customerPhotos[id]),
+      ),
+    ).slice(0, 20);
+    if (ids.length === 0) return;
+
+    (async () => {
+      try {
+        const headers = await getSupabaseAuthHeaders();
+        const next: Record<string, string> = {};
+        await Promise.all(
+          ids.map(async (id) => {
+            try {
+              const url =
+                `${SUPABASE_URL}/rest/v1/users` +
+                `?or=(id.eq.${encodeURIComponent(id)},auth_id.eq.${encodeURIComponent(id)})` +
+                `&select=id,auth_id,profile_image&limit=1`;
+              const res = await fetch(url, { headers });
+              if (!res.ok) return;
+              const rows = await res.json();
+              const u = Array.isArray(rows) ? rows[0] : null;
+              const photo = String(u?.profile_image || '').trim();
+              if (photo.startsWith('http')) {
+                next[id] = photo;
+                if (u?.id) next[String(u.id)] = photo;
+                if (u?.auth_id) next[String(u.auth_id)] = photo;
+              }
+            } catch {}
+          }),
+        );
+        if (!cancelled && Object.keys(next).length > 0) {
+          setCustomerPhotos((prev) => ({ ...prev, ...next }));
+        }
+      } catch {}
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeTab, immediateServices, reservations]);
+
+  const openServiceDetail = useCallback(async (item: any) => {
+    setDetailItem(item);
+    setDetailRouteCoords([]);
+    const oLat = Number(item?.pickup_lat ?? item?.pickup?.lat);
+    const oLng = Number(item?.pickup_lng ?? item?.pickup?.lng);
+    const dLat = Number(item?.drop_lat ?? item?.drop?.lat);
+    const dLng = Number(item?.drop_lng ?? item?.drop?.lng);
+    if (!Number.isFinite(oLat) || !Number.isFinite(oLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
+      return;
+    }
+    setDetailRouteLoading(true);
+    try {
+      if (API_KEY) {
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${oLat},${oLng}&destination=${dLat},${dLng}&key=${API_KEY}&language=es`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.routes?.[0]?.overview_polyline?.points) {
+          const coords = decodePolyline(data.routes[0].overview_polyline.points);
+          setDetailRouteCoords(coords);
+          setTimeout(() => {
+            detailMapRef.current?.fitToCoordinates(coords, {
+              edgePadding: { top: 36, right: 36, bottom: 36, left: 36 },
+              animated: false,
+            });
+          }, 120);
+          return;
+        }
+      }
+      const fallback = [
+        { latitude: oLat, longitude: oLng },
+        { latitude: dLat, longitude: dLng },
+      ];
+      setDetailRouteCoords(fallback);
+      setTimeout(() => {
+        detailMapRef.current?.fitToCoordinates(fallback, {
+          edgePadding: { top: 36, right: 36, bottom: 36, left: 36 },
+          animated: false,
+        });
+      }, 120);
+    } catch {
+      setDetailRouteCoords([
+        { latitude: oLat, longitude: oLng },
+        { latitude: dLat, longitude: dLng },
+      ]);
+    } finally {
+      setDetailRouteLoading(false);
+    }
+  }, []);
+
+  const closeServiceDetail = () => {
+    setDetailItem(null);
+    setDetailRouteCoords([]);
+  };
+
   const renderItem = ({ item, index }: { item: any; index: number }) => {
     try {
-    console.log(`🎨 [RENDER] item #${index}: ref=${item?.reference}, status=${item?.status}, keys=${Object.keys(item || {}).length}`);
+    const fare = getBookingFareRange(item);
+    const photo = resolveCustomerPhoto(item);
+    const tripLabel = item.trip_type || 'Ida';
+    const distKm = parseFloat(String(item.distance || 0));
+    const durationMin = Number(item.duration || 0);
+
     return (
-    <Animatable.View animation="fadeInUp" duration={450} delay={index * 60} useNativeDriver>
+    <Animatable.View animation="fadeInUp" duration={400} delay={index * 40} useNativeDriver>
       <View style={s.card}>
-        <View style={s.cardGlow} />
+        <View style={s.cardTop}>
+          <View style={s.cardMain}>
+            <View style={s.clientRow}>
+              {photo ? (
+                <Image source={{ uri: photo }} style={s.avatarImg} />
+              ) : (
+                <View style={s.avatarFallback}>
+                  <Ionicons name="person" size={16} color="#00E5FF" />
+                </View>
+              )}
+              <View style={s.clientMeta}>
+                <Text style={s.clientName} numberOfLines={1}>{item.customer_name || 'Cliente'}</Text>
+                <Text style={s.tripTypeTxt} numberOfLines={1}>{tripLabel}</Text>
+              </View>
+            </View>
 
-        {/* Reference & Booking Type Badge */}
-        <View style={s.cardHeader}>
-          <View style={s.refBadge}>
-            <Text style={s.refTxt}>{item.reference}</Text>
+            <View style={s.routeBlock}>
+              <View style={s.routeRow}>
+                <View style={s.dotStart} />
+                <Text style={s.routeAddr} numberOfLines={1}>{item.pickup_address || 'Origen'}</Text>
+              </View>
+              <View style={s.routeLine} />
+              <View style={s.routeRow}>
+                <View style={s.dotEnd} />
+                <Text style={s.routeAddr} numberOfLines={1}>{item.drop_address || 'Destino'}</Text>
+              </View>
+            </View>
+
+            <View style={s.metricsRow}>
+              <View style={s.pricePill}>
+                <Text style={s.pricePillTxt}>$ {moneyFmt(fare.min)}</Text>
+                {!fare.isComplete && fare.max !== fare.min ? (
+                  <>
+                    <Text style={s.pricePillSep}>–</Text>
+                    <Text style={s.pricePillTxt}>$ {moneyFmt(fare.max)}</Text>
+                  </>
+                ) : null}
+              </View>
+              <Text style={s.metricTxt}>{distKm.toFixed(1)} km</Text>
+              <Text style={s.metricDot}>·</Text>
+              <Text style={s.metricTxt}>{durationMin || 0} min</Text>
+              {item.booking_date ? (
+                <>
+                  <Text style={s.metricDot}>·</Text>
+                  <Text style={s.metricTxt}>{formatTime(item.booking_date)}</Text>
+                </>
+              ) : null}
+            </View>
           </View>
-          <View style={[s.typeBadge, item.booking_type === 'immediate' && s.typeBadgeImmediate]}>
-            <Ionicons name={item.booking_type === 'immediate' ? 'flash' : 'calendar'} size={14} color="#051A26" />
-            <Text style={s.typeTxt}>{item.booking_type === 'immediate' ? 'Inmediato' : 'Reserva'}</Text>
-          </View>
-          {item.trip_type ? (
-          <View style={[s.typeBadge, item.trip_type === 'Ida y Vuelta' && s.typeBadgeRound]}>
-            <Ionicons name={item.trip_type === 'Ida' ? 'arrow-forward-circle' : 'repeat'} size={14} color="#051A26" />
-            <Text style={s.typeTxt}>{item.trip_type}</Text>
-          </View>
-          ) : null}
+
+          <TouchableOpacity
+            style={s.verBtn}
+            onPress={() => openServiceDetail(item)}
+            activeOpacity={0.85}
+          >
+            <Text style={s.verBtnTxt}>Ver</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Client info */}
-        <View style={s.clientRow}>
-          <Ionicons name="person" size={16} color="#00E5FF" />
-          <Text style={s.clientName}>{item.customer_name || 'Cliente'}</Text>
-        </View>
-
-        {/* Route */}
-        <View style={s.routeBlock}>
-          <View style={s.routeRow}>
-            <View style={s.dotGreen} />
-            <Text style={s.routeAddr} numberOfLines={1}>{item.pickup_address || 'Origen'}</Text>
-          </View>
-          <View style={s.routeLine} />
-          <View style={s.routeRow}>
-            <View style={s.dotRed} />
-            <Text style={s.routeAddr} numberOfLines={1}>{item.drop_address || 'Destino'}</Text>
-          </View>
-        </View>
-
-        {/* Date & Time */}
-        {item.booking_date ? (
-        <View style={s.dateTimeRow}>
-          <View style={s.dtItem}>
-            <Ionicons name="calendar-outline" size={14} color="#00E5FF" />
-            <Text style={s.dtTxt}>{formatDate(item.booking_date)}</Text>
-          </View>
-          <View style={s.dtItem}>
-            <Ionicons name="time-outline" size={14} color="#00E5FF" />
-            <Text style={s.dtTxt}>{formatTime(item.booking_date)}</Text>
-          </View>
-        </View>
-        ) : null}
-
-        {/* Observations (nota del cliente) */}
-        {item.observations && String(item.observations).trim() ? (
-        <View style={s.obsBlock}>
-          <View style={s.obsHeader}>
-            <Ionicons name="chatbubble-ellipses-outline" size={14} color="#00E5FF" />
-            <Text style={s.obsLabel}>Observación del cliente</Text>
-          </View>
-          <Text style={s.obsText}>{String(item.observations).trim()}</Text>
-        </View>
-        ) : null}
-
-        {/* Stats */}
-        <View style={s.statsRow}>
-          <View style={s.stat}>
-            <Text style={s.statLabel}>Valor</Text>
-            <Text style={s.statValue}>{formatBookingFareRange(item)}</Text>
-          </View>
-          <View style={s.stat}>
-            <Text style={s.statLabel}>Dist.</Text>
-            <Text style={s.statValue}>{parseFloat(String(item.distance || 0)).toFixed(2)} km</Text>
-          </View>
-          <View style={s.stat}>
-            <Text style={s.statLabel}>Tiempo</Text>
-            <Text style={s.statValue}>{item.duration || 0} min</Text>
-          </View>
-        </View>
-
-        {/* Accept button */}
-        <TouchableOpacity
-          style={[s.acceptBtn, accepting === item.id && { opacity: 0.6 }]}
-          onPress={() => handleAccept(item)}
-          disabled={accepting === item.id}
-          activeOpacity={0.85}
-        >
-          {accepting === item.id ? (
-            <ActivityIndicator color="#051A26" size="small" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={20} color="#051A26" />
-              <Text style={s.acceptTxt}>{item.booking_type === 'immediate' ? 'Aceptar Servicio' : 'Aceptar Reserva'}</Text>
-            </>
-          )}
-        </TouchableOpacity>
       </View>
     </Animatable.View>
     );
@@ -1125,6 +1246,204 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
         buttons={alertButtons}
         onDismiss={() => setAlertVisible(false)}
       />
+
+      <Modal
+        visible={!!detailItem}
+        transparent
+        animationType="fade"
+        onRequestClose={closeServiceDetail}
+      >
+        <View style={s.modalOverlay}>
+          <View style={[s.modalSheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+            <View style={s.modalHandle} />
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Detalle del servicio</Text>
+              <TouchableOpacity style={s.modalClose} onPress={closeServiceDetail} activeOpacity={0.8}>
+                <Ionicons name="close" size={18} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            {detailItem ? (
+              <ScrollView
+                style={s.modalScroll}
+                contentContainerStyle={s.modalScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={s.modalBadges}>
+                  <View style={[s.modalBadge, detailItem.booking_type === 'immediate' && s.modalBadgeImm]}>
+                    <Ionicons
+                      name={detailItem.booking_type === 'immediate' ? 'flash' : 'calendar'}
+                      size={12}
+                      color="#051A26"
+                    />
+                    <Text style={s.modalBadgeTxt}>
+                      {detailItem.booking_type === 'immediate' ? 'Inmediato' : 'Reserva'}
+                    </Text>
+                  </View>
+                  {!!detailItem.reference && (
+                    <View style={s.modalBadgeCode}>
+                      <Text style={s.modalBadgeCodeTxt}>{detailItem.reference}</Text>
+                    </View>
+                  )}
+                  {!!detailItem.trip_type && (
+                    <View style={s.modalBadgeTrip}>
+                      <Text style={s.modalBadgeTripTxt}>{detailItem.trip_type}</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={s.modalClientRow}>
+                  {resolveCustomerPhoto(detailItem) ? (
+                    <Image source={{ uri: resolveCustomerPhoto(detailItem)! }} style={s.modalAvatar} />
+                  ) : (
+                    <View style={s.modalAvatarFallback}>
+                      <Ionicons name="person" size={20} color="#00E5FF" />
+                    </View>
+                  )}
+                  <Text style={s.modalClientName}>{detailItem.customer_name || 'Cliente'}</Text>
+                </View>
+
+                <View style={s.modalMapWrap}>
+                  {detailRouteLoading ? (
+                    <View style={s.modalMapLoading}>
+                      <ActivityIndicator color="#00E5FF" />
+                    </View>
+                  ) : detailRouteCoords.length > 1 ? (
+                    <MapView
+                      ref={detailMapRef}
+                      style={StyleSheet.absoluteFillObject}
+                      provider={PROVIDER_GOOGLE}
+                      customMapStyle={GOOGLE_MAPS_DARK_STYLE}
+                      scrollEnabled={false}
+                      zoomEnabled={false}
+                      pitchEnabled={false}
+                      rotateEnabled={false}
+                      toolbarEnabled={false}
+                      initialRegion={{
+                        latitude: detailRouteCoords[0].latitude,
+                        longitude: detailRouteCoords[0].longitude,
+                        latitudeDelta: 0.04,
+                        longitudeDelta: 0.04,
+                      }}
+                    >
+                      <Polyline
+                        coordinates={detailRouteCoords}
+                        strokeColor={ROUTE_LINE_BLUE}
+                        strokeWidth={8}
+                        lineJoin="round"
+                        lineCap="round"
+                        zIndex={1}
+                      />
+                      <Polyline
+                        coordinates={detailRouteCoords}
+                        strokeColor="#00E676"
+                        strokeWidth={5}
+                        lineJoin="round"
+                        lineCap="round"
+                        zIndex={2}
+                      />
+                      <Marker coordinate={detailRouteCoords[0]} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+                        <View style={s.routeEndpointStart} />
+                      </Marker>
+                      <Marker
+                        coordinate={detailRouteCoords[detailRouteCoords.length - 1]}
+                        anchor={{ x: 0.5, y: 0.5 }}
+                        tracksViewChanges={false}
+                      >
+                        <View style={s.routeEndpointEnd} />
+                      </Marker>
+                    </MapView>
+                  ) : (
+                    <View style={s.modalMapLoading}>
+                      <Ionicons name="map-outline" size={28} color="rgba(0,229,255,0.4)" />
+                    </View>
+                  )}
+                </View>
+
+                <View style={s.modalRouteBlock}>
+                  <View style={s.routeRow}>
+                    <View style={s.dotStart} />
+                    <Text style={s.modalRouteAddr}>{detailItem.pickup_address || 'Origen'}</Text>
+                  </View>
+                  <View style={s.routeLineTall} />
+                  <View style={s.routeRow}>
+                    <View style={s.dotEnd} />
+                    <Text style={s.modalRouteAddr}>{detailItem.drop_address || 'Destino'}</Text>
+                  </View>
+                </View>
+
+                {detailItem.booking_date ? (
+                  <View style={s.modalMetaRow}>
+                    <Ionicons name="calendar-outline" size={14} color="#00E5FF" />
+                    <Text style={s.modalMetaTxt}>{formatDate(detailItem.booking_date)}</Text>
+                    <Text style={s.metricDot}>·</Text>
+                    <Ionicons name="time-outline" size={14} color="#00E5FF" />
+                    <Text style={s.modalMetaTxt}>{formatTime(detailItem.booking_date)}</Text>
+                  </View>
+                ) : null}
+
+                {detailItem.observations && String(detailItem.observations).trim() ? (
+                  <View style={s.obsBlock}>
+                    <View style={s.obsHeader}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={13} color="#00E5FF" />
+                      <Text style={s.obsLabel}>Observación del cliente</Text>
+                    </View>
+                    <Text style={s.obsText}>{String(detailItem.observations).trim()}</Text>
+                  </View>
+                ) : null}
+
+                <View style={s.modalStatsRow}>
+                  <View style={s.modalStat}>
+                    <Text style={s.statLabel}>Valor</Text>
+                    <Text style={s.modalStatValue} numberOfLines={1}>
+                      {formatBookingFareRange(detailItem)}
+                    </Text>
+                  </View>
+                  <View style={s.modalStat}>
+                    <Text style={s.statLabel}>Km</Text>
+                    <Text style={s.modalStatValue}>
+                      {parseFloat(String(detailItem.distance || 0)).toFixed(1)}
+                    </Text>
+                  </View>
+                  <View style={s.modalStat}>
+                    <Text style={s.statLabel}>Tiempo</Text>
+                    <Text style={s.modalStatValue}>{detailItem.duration || 0} min</Text>
+                  </View>
+                </View>
+              </ScrollView>
+            ) : null}
+
+            <View style={s.modalActions}>
+              <TouchableOpacity
+                style={s.soltarBtn}
+                onPress={closeServiceDetail}
+                activeOpacity={0.85}
+              >
+                <Text style={s.soltarBtnTxt}>Soltar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.acceptBtnModal, accepting === detailItem?.id && { opacity: 0.6 }]}
+                onPress={() => {
+                  if (!detailItem) return;
+                  const item = detailItem;
+                  closeServiceDetail();
+                  handleAccept(item);
+                }}
+                disabled={!!detailItem && accepting === detailItem.id}
+                activeOpacity={0.85}
+              >
+                {detailItem && accepting === detailItem.id ? (
+                  <ActivityIndicator color="#051A26" size="small" />
+                ) : (
+                  <Text style={s.acceptTxt}>
+                    {detailItem?.booking_type === 'immediate' ? 'Aceptar Servicio' : 'Aceptar Reserva'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1237,59 +1556,96 @@ const s = StyleSheet.create({
     color: '#051A26',
     letterSpacing: 0.4,
   },
-  list: { paddingHorizontal: 18, paddingTop: 14 },
+  list: { paddingHorizontal: 14, paddingTop: 10 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingTxt: { fontSize: 14, color: 'rgba(255,255,255,0.5)' },
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 100, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: 'rgba(255,255,255,0.7)' },
   emptySub: { fontSize: 13, color: 'rgba(255,255,255,0.4)', textAlign: 'center', paddingHorizontal: 40 },
   card: {
-    overflow: 'hidden', borderRadius: 20, padding: 18, marginBottom: 16,
-    backgroundColor: 'rgba(10,46,61,0.55)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.14)',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: 'rgba(10,46,61,0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,229,255,0.18)',
   },
-  cardGlow: {
-    position: 'absolute', top: -40, right: -40, width: 140, height: 140,
-    borderRadius: 70, backgroundColor: 'rgba(0,229,255,0.06)',
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  refBadge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
+  cardMain: { flex: 1, minWidth: 0 },
+  clientRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  avatarImg: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(0,229,255,0.12)',
   },
-  refTxt: { fontSize: 12, fontWeight: '700', color: '#00E5FF', letterSpacing: 0.5 },
-  typeBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
-    backgroundColor: '#00E5FF',
+  avatarFallback: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,229,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,255,0.25)',
   },
-  typeBadgeRound: { backgroundColor: '#FFD600' },
-  typeBadgeImmediate: { backgroundColor: '#FF9500' },
-  typeTxt: { fontSize: 11, fontWeight: '700', color: '#051A26' },
-  clientRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  clientName: { fontSize: 15, fontWeight: '600', color: '#FFF' },
-  routeBlock: { marginBottom: 12, paddingLeft: 4 },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  dotGreen: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00E676' },
-  dotRed: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF5252' },
-  routeLine: { width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.15)', marginLeft: 4.5 },
-  routeAddr: { flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.75)' },
-  dateTimeRow: { flexDirection: 'row', gap: 16, marginBottom: 12 },
-  dtItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dtTxt: { fontSize: 12, color: 'rgba(255,255,255,0.6)' },
-  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  stat: {
-    flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10,
-    backgroundColor: 'rgba(5,26,38,0.6)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.08)',
+  clientMeta: { flex: 1, minWidth: 0 },
+  clientName: { fontSize: 13, fontWeight: '700', color: '#FFF' },
+  tripTypeTxt: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 1 },
+  routeBlock: { marginBottom: 8, paddingLeft: 2 },
+  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dotStart: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#00E5FF',
   },
-  statLabel: { fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 2 },
-  statValue: { fontSize: 11, fontWeight: '700', color: '#FFF' },
-  acceptBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 14, borderRadius: 16, backgroundColor: '#00E5FF',
+  dotEnd: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#E91E63', borderWidth: 1.5, borderColor: '#00E5FF',
   },
-  acceptTxt: { fontSize: 15, fontWeight: '700', color: '#051A26' },
+  routeLine: { width: 1, height: 10, backgroundColor: 'rgba(255,255,255,0.15)', marginLeft: 3.5 },
+  routeLineTall: { width: 1, height: 14, backgroundColor: 'rgba(255,255,255,0.15)', marginLeft: 3.5, marginVertical: 2 },
+  routeAddr: { flex: 1, fontSize: 11, color: 'rgba(255,255,255,0.72)' },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  pricePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,229,255,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,229,255,0.35)',
+  },
+  pricePillTxt: { fontSize: 10, fontWeight: '700', color: '#00E5FF' },
+  pricePillSep: { fontSize: 10, fontWeight: '600', color: 'rgba(0,229,255,0.55)' },
+  metricTxt: { fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
+  metricDot: { fontSize: 10, color: 'rgba(255,255,255,0.3)' },
+  verBtn: {
+    alignSelf: 'center',
+    minWidth: 52,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,229,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,255,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verBtnTxt: { fontSize: 12, fontWeight: '800', color: '#00E5FF' },
+  acceptTxt: { fontSize: 13, fontWeight: '700', color: '#051A26' },
   obsBlock: {
-    marginBottom: 14, padding: 12, borderRadius: 12,
+    marginTop: 10, marginBottom: 4, padding: 10, borderRadius: 12,
     backgroundColor: 'rgba(0,229,255,0.06)',
     borderWidth: 1, borderColor: 'rgba(0,229,255,0.18)',
   },
@@ -1298,7 +1654,129 @@ const s = StyleSheet.create({
     fontSize: 10, fontWeight: '700', color: '#00E5FF',
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
-  obsText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 18 },
+  obsText: { fontSize: 12, color: 'rgba(255,255,255,0.85)', lineHeight: 17 },
+  statLabel: { fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 2 },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    maxHeight: '88%',
+    backgroundColor: '#051A26',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,255,0.18)',
+    paddingTop: 8,
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    marginBottom: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: '#FFF' },
+  modalClose: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  modalScroll: { maxHeight: Dimensions.get('window').height * 0.62 },
+  modalScrollContent: { paddingHorizontal: 16, paddingBottom: 12 },
+  modalBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  modalBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: '#00E5FF',
+  },
+  modalBadgeImm: { backgroundColor: '#FF9500' },
+  modalBadgeTxt: { fontSize: 10, fontWeight: '700', color: '#051A26' },
+  modalBadgeCode: {
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+    backgroundColor: 'rgba(0,229,255,0.12)',
+  },
+  modalBadgeCodeTxt: { fontSize: 10, fontWeight: '700', color: '#00E5FF', letterSpacing: 0.4 },
+  modalBadgeTrip: {
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  modalBadgeTripTxt: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.75)' },
+  modalClientRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  modalAvatar: { width: 42, height: 42, borderRadius: 21 },
+  modalAvatarFallback: {
+    width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,229,255,0.12)',
+    borderWidth: 1, borderColor: 'rgba(0,229,255,0.3)',
+  },
+  modalClientName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#FFF' },
+  modalMapWrap: {
+    height: 160,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 12,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,229,255,0.2)',
+  },
+  modalMapLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  modalRouteBlock: { marginBottom: 10 },
+  modalRouteAddr: { flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.8)', lineHeight: 17 },
+  modalMetaRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap',
+  },
+  modalMetaTxt: { fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
+  modalStatsRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  modalStat: {
+    flex: 1, alignItems: 'center', paddingVertical: 8, paddingHorizontal: 4, borderRadius: 10,
+    backgroundColor: 'rgba(5,26,38,0.6)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.08)',
+  },
+  modalStatValue: { fontSize: 11, fontWeight: '700', color: '#FFF' },
+  routeEndpointStart: {
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: '#FFFFFF', borderWidth: 2.5, borderColor: '#00E5FF',
+  },
+  routeEndpointEnd: {
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: '#E91E63', borderWidth: 2.5, borderColor: '#00E5FF',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  soltarBtn: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,82,82,0.12)',
+    borderWidth: 1.5,
+    borderColor: '#FF5252',
+  },
+  soltarBtnTxt: { fontSize: 14, fontWeight: '800', color: '#FF5252' },
+  acceptBtnModal: {
+    flex: 1.35,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00E5FF',
+  },
 
   // Tab styles
   tabContainer: {

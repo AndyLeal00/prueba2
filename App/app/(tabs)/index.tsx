@@ -964,7 +964,7 @@ const MapScreen = () => {
   const [driverReservationsMinimized, setDriverReservationsMinimized] = useState(false);
   const goToggleLockRef = useRef(false);
   const mapSensorRef = useRef<MapSensorHandle>(null);
-  const [mapViewMode, setMapViewMode] = useState<MapViewMode>('3D');
+  const [mapViewMode, setMapViewMode] = useState<MapViewMode>('2D');
   const [mapTheme, setMapTheme] = useState<GoogleMapTheme>('dark');
   const [mapBearing, setMapBearing] = useState(0);
   const driverReservationsExpandedHeight = Math.max(300, Math.round(screenHeight * 0.52));

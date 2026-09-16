@@ -56,7 +56,7 @@ const accuracyRadiusForZoom = (baseMeters: number, zoom: number) => {
 };
 
 const MapSensor = forwardRef<MapSensorHandle, MapSensorProps>(
-  ({ children, currentPosition = null, viewMode = '3D', mapTheme = 'dark', mapBottomPadding = 0, onMapBearingChange }, ref) => {
+  ({ children, currentPosition = null, viewMode = '2D', mapTheme = 'dark', mapBottomPadding = 0, onMapBearingChange }, ref) => {
   const mapRef = useRef<MapView>(null);
   const headingRef = useRef(0);
   const lastCameraRef = useRef<CameraSnapshot | null>(null);
