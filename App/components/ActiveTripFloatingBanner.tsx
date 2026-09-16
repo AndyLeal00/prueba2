@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { FIXED_TEXT_PROPS } from '@/common/utils/typography';
 import {
@@ -19,7 +18,7 @@ import {
 
 const ACCENT = '#00E5FF';
 const ACTIVE_GREEN = '#00E676';
-const BG = 'rgba(5, 26, 38, 0.94)';
+const BG = 'rgba(5, 26, 38, 0.96)';
 const BORDER = 'rgba(0, 229, 255, 0.45)';
 
 function truncateAddress(value?: string, max = 42): string {
@@ -29,13 +28,12 @@ function truncateAddress(value?: string, max = 42): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
-type BannerContentProps = {
+type BannerCardProps = {
   booking: ActiveTripBannerBooking;
   isDriver: boolean;
-  bottomOffset: number;
 };
 
-function BannerContent({ booking, isDriver, bottomOffset }: BannerContentProps) {
+function BannerCard({ booking, isDriver }: BannerCardProps) {
   const navigation = useNavigation<any>();
 
   const counterpartName = useMemo(() => {
@@ -67,10 +65,16 @@ function BannerContent({ booking, isDriver, bottomOffset }: BannerContentProps) 
       // ignore
     }
 
+    // Desde el tabBar el navigator local es el de tabs; el stack raíz es el padre.
+    const root =
+      navigation.getParent?.()?.getParent?.() ||
+      navigation.getParent?.() ||
+      navigation;
+
     if (isDriver) {
-      navigation.navigate('ReservationTrip', { reservation: booking });
+      root.navigate('ReservationTrip', { reservation: booking });
     } else {
-      navigation.navigate('CustomerActiveTrip', {
+      root.navigate('CustomerActiveTrip', {
         bookingId: booking.id,
         booking,
       });
@@ -78,88 +82,76 @@ function BannerContent({ booking, isDriver, bottomOffset }: BannerContentProps) 
   }, [booking, isDriver, navigation]);
 
   return (
-    <View
-      pointerEvents="box-none"
-      style={[styles.wrap, { bottom: bottomOffset }]}
+    <TouchableOpacity
+      style={styles.card}
+      onPress={openTrip}
+      activeOpacity={0.88}
+      accessibilityRole="button"
+      accessibilityLabel="Viaje en curso. Abrir detalle del viaje"
     >
-      <TouchableOpacity
-        style={styles.card}
-        onPress={openTrip}
-        activeOpacity={0.88}
-        accessibilityRole="button"
-        accessibilityLabel="Viaje en curso. Abrir detalle del viaje"
-      >
-        <View style={styles.headerRow}>
-          <View style={styles.statusRow}>
-            <View style={styles.greenDot} />
-            <Text {...FIXED_TEXT_PROPS} style={styles.title}>
-              Viaje En Curso
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={ACCENT} />
-        </View>
-
-        <View style={styles.personRow}>
-          {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarFallback}>
-              <Ionicons name="person" size={14} color={ACCENT} />
-            </View>
-          )}
-          <Text {...FIXED_TEXT_PROPS} style={styles.personName} numberOfLines={1}>
-            {counterpartName}
+      <View style={styles.headerRow}>
+        <View style={styles.statusRow}>
+          <View style={styles.greenDot} />
+          <Text {...FIXED_TEXT_PROPS} style={styles.title}>
+            Viaje En Curso
           </Text>
         </View>
+        <Ionicons name="chevron-forward" size={16} color={ACCENT} />
+      </View>
 
-        <View style={styles.routeBlock}>
-          <View style={styles.routeRow}>
-            <View style={[styles.routeDot, styles.routeDotStart]} />
-            <Text {...FIXED_TEXT_PROPS} style={styles.routeTxt} numberOfLines={1}>
-              {pickup}
-            </Text>
+      <View style={styles.personRow}>
+        {photoUri ? (
+          <Image source={{ uri: photoUri }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <Ionicons name="person" size={14} color={ACCENT} />
           </View>
-          <View style={styles.routeRow}>
-            <View style={[styles.routeDot, styles.routeDotEnd]} />
-            <Text {...FIXED_TEXT_PROPS} style={styles.routeTxt} numberOfLines={1}>
-              {dropoff}
-            </Text>
-          </View>
+        )}
+        <Text {...FIXED_TEXT_PROPS} style={styles.personName} numberOfLines={1}>
+          {counterpartName}
+        </Text>
+      </View>
+
+      <View style={styles.routeBlock}>
+        <View style={styles.routeRow}>
+          <View style={[styles.routeDot, styles.routeDotStart]} />
+          <Text {...FIXED_TEXT_PROPS} style={styles.routeTxt} numberOfLines={1}>
+            {pickup}
+          </Text>
         </View>
-      </TouchableOpacity>
-    </View>
+        <View style={styles.routeRow}>
+          <View style={[styles.routeDot, styles.routeDotEnd]} />
+          <Text {...FIXED_TEXT_PROPS} style={styles.routeTxt} numberOfLines={1}>
+            {dropoff}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 /**
- * Aviso flotante compacto sobre las pestañas del conductor/cliente
- * cuando hay un viaje activo. Al tocarlo abre el detalle del viaje.
+ * Aviso flotante compacto. Debe montarse DENTRO del slot `tabBar`
+ * (junto al bottom nav) para quedar por encima del contenido de las tabs.
  */
 export default function ActiveTripFloatingBanner() {
-  const insets = useSafeAreaInsets();
   const { booking, isDriver, hasActiveTrip } = useActiveTripBanner();
-
-  // Encima del navbar flotante
-  const bottomOffset = Math.max(insets.bottom, 8) + 86;
 
   if (!hasActiveTrip || !booking) return null;
 
   return (
-    <BannerContent
-      booking={booking}
-      isDriver={isDriver}
-      bottomOffset={bottomOffset}
-    />
+    <View style={styles.wrap} pointerEvents="box-none">
+      <BannerCard booking={booking} isDriver={isDriver} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    zIndex: 40,
-    elevation: 40,
+    marginHorizontal: 14,
+    marginBottom: 8,
+    zIndex: 60,
+    elevation: 60,
   },
   card: {
     backgroundColor: BG,
@@ -176,7 +168,7 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
       },
       android: {
-        elevation: 10,
+        elevation: 12,
       },
     }),
   },

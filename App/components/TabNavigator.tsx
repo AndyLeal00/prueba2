@@ -51,6 +51,7 @@ const CustomerTabNavigator: React.FC = () => {
         tabBarPosition="bottom"
         tabBar={(props) => (
           <View style={styles.floatingTabBar} pointerEvents="box-none">
+            <ActiveTripFloatingBanner />
             <CustomerBottomNav {...props} />
           </View>
         )}
@@ -64,7 +65,6 @@ const CustomerTabNavigator: React.FC = () => {
         <CustomerTabs.Screen name="Lugares" component={SearchScreen} options={{ title: "Lugares" }} />
         <CustomerTabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Perfil" }} />
       </CustomerTabs.Navigator>
-      <ActiveTripFloatingBanner />
     </View>
   );
 };
@@ -81,6 +81,7 @@ const DriverTabNavigator: React.FC = () => {
         tabBarPosition="bottom"
         tabBar={(props) => (
           <View style={styles.floatingTabBar} pointerEvents="box-none">
+            <ActiveTripFloatingBanner />
             <DriverBottomNav {...props} />
           </View>
         )}
@@ -95,7 +96,6 @@ const DriverTabNavigator: React.FC = () => {
         <DriverTabs.Screen name="Historial" component={DriverActivityScreen} options={{ title: "Historial" }} />
         <DriverTabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Perfil" }} />
       </DriverTabs.Navigator>
-      <ActiveTripFloatingBanner />
     </View>
   );
 };

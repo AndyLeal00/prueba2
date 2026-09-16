@@ -19,33 +19,6 @@ export type ActiveTripBannerBooking = {
   [key: string]: unknown;
 };
 
-const SELECT_FIELDS = [
-  'id',
-  'status',
-  'reference',
-  'customer',
-  'customer_name',
-  'customer_image',
-  'driver_id',
-  'driver_name',
-  'driver_image',
-  'pickup_address',
-  'drop_address',
-  'pickup_lat',
-  'pickup_lng',
-  'drop_lat',
-  'drop_lng',
-  'trip_cost',
-  'estimate',
-  'price',
-  'otp',
-  'otp_code',
-  'payment_mode',
-  'plate_number',
-  'booking_type',
-  'created_at',
-].join(',');
-
 const ACTIVE_STATUSES = ['ACCEPTED', 'ARRIVED', 'STARTED', 'IN_PROGRESS', 'TRIP_STARTED'];
 
 function pickUserType(user: any, profile: any): string {
@@ -106,6 +79,7 @@ export function useActiveTripBanner() {
   const refresh = useCallback(async () => {
     const idCandidates = candidatesKey.split('|').filter(Boolean);
     if ((!isDriver && !isCustomer) || idCandidates.length === 0) {
+      console.log('[ActiveTripBanner] skip: no role/ids', { userType, isDriver, isCustomer });
       setBooking(null);
       return;
     }
@@ -114,23 +88,39 @@ export function useActiveTripBanner() {
       const headers = await getSupabaseAuthHeaders();
       const uid = await resolvePublicUserId(idCandidates, headers);
       if (!uid) {
+        console.log('[ActiveTripBanner] no public user id resolved');
         setBooking(null);
         return;
       }
 
       const statuses = ACTIVE_STATUSES.map((s) => `"${s}"`).join(',');
+      // Misma convención que NotificationsScreen / CustomerHome (select=*).
+      // Un select con columnas inexistentes hace fallar toda la query en silencio.
       const filter = isDriver
         ? `driver_id=eq.${uid}`
         : `customer=eq.${uid}`;
       const url =
         `${SUPABASE_URL}/rest/v1/bookings?${filter}` +
-        `&status=in.(${statuses})&order=created_at.desc&limit=1&select=${SELECT_FIELDS}`;
+        `&status=in.(${statuses})&order=created_at.desc&limit=1&select=*`;
 
       const resp = await fetch(url, { headers });
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '');
+        console.warn('[ActiveTripBanner] fetch failed', resp.status, body.slice(0, 200));
+        return;
+      }
 
       const rows = await resp.json();
       const row = Array.isArray(rows) ? rows[0] : null;
+
+      console.log(
+        '[ActiveTripBanner]',
+        isDriver ? 'driver' : 'customer',
+        'uid=',
+        uid,
+        'found=',
+        row ? `${row.reference || row.id} status=${row.status}` : 'none',
+      );
 
       if (row?.id && isActiveTripStatus(row.status)) {
         setBooking(row);
@@ -140,11 +130,11 @@ export function useActiveTripBanner() {
     } catch (e) {
       console.warn('[ActiveTripBanner] refresh error', e);
     }
-  }, [isDriver, isCustomer, candidatesKey]);
+  }, [isDriver, isCustomer, candidatesKey, userType]);
 
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 12_000);
+    const interval = setInterval(refresh, 8_000);
     return () => clearInterval(interval);
   }, [refresh]);
 
