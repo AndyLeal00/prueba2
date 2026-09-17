@@ -46,16 +46,24 @@ export const fetchMessages = async (bookingId: string): Promise<ChatMessage[]> =
     const url =
       `${SUPABASE_URL}/rest/v1/chat_messages` +
       `?booking_id=eq.${encodeURIComponent(bookingId)}` +
-      `&select=*&order=created_at.asc`;
+      `&select=id,booking_id,sender_id,sender_role,sender_name,message,created_at` +
+      `&order=created_at.asc`;
 
-    const res = await fetch(url, { method: 'GET', headers });
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { ...headers, Accept: 'application/json' },
+    });
     if (!res.ok) {
       const text = await res.text();
       console.error('chatService.fetchMessages error:', res.status, text);
       return [];
     }
     const data = await res.json();
-    return Array.isArray(data) ? (data as ChatMessage[]) : [];
+    if (!Array.isArray(data)) return [];
+    return data.map((row: any) => ({
+      ...row,
+      message: String(row?.message ?? ''),
+    })) as ChatMessage[];
   } catch (error) {
     console.error('chatService.fetchMessages exception:', error);
     return [];

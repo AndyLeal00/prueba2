@@ -222,8 +222,9 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
 
     const prev = messages[index - 1];
     const showTail = !prev || prev.sender_role !== item.sender_role;
-    // Deja espacio para el avatar (28) + gap; evita que el texto se recorte.
-    const bubbleMaxW = Math.min(SCREEN_W * 0.78, SCREEN_W - 72);
+    // Ancho fijo en px (no %): evita que avatar+burbuja compriman el Text
+    // y recorten la 2.ª línea ("vas?", "espera!", "minutos!").
+    const bubbleMaxW = Math.floor(SCREEN_W * 0.72);
 
     return (
       <View
@@ -243,14 +244,14 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
               </View>
             )
           ) : (
-            <View style={{ width: 28 }} />
+            <View style={styles.msgAvatarSpacer} />
           )
         ) : null}
 
         <View
           style={[
             styles.bubble,
-            { maxWidth: bubbleMaxW },
+            { width: undefined, maxWidth: bubbleMaxW },
             mine && styles.bubbleMine,
             isAdmin && styles.bubbleAdmin,
             !mine && !isAdmin && styles.bubbleOther,
@@ -259,9 +260,15 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
           ]}
         >
           <Text
-            style={[styles.bubbleText, mine && styles.bubbleTextLight, isAdmin && styles.bubbleTextAdmin]}
+            selectable
+            style={[
+              styles.bubbleText,
+              { maxWidth: bubbleMaxW - 24 },
+              mine && styles.bubbleTextLight,
+              isAdmin && styles.bubbleTextAdmin,
+            ]}
           >
-            {item.message}
+            {String(item.message ?? '')}
           </Text>
           {!!time && (
             <Text style={[styles.bubbleMeta, mine && styles.bubbleMetaLight, isAdmin && styles.bubbleMetaAdmin]}>
@@ -369,6 +376,7 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
                 ]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator
+                removeClippedSubviews={false}
                 onContentSizeChange={() => {
                   if (messages.length > 0) {
                     listRef.current?.scrollToEnd({ animated: true });
@@ -457,7 +465,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(0,229,255,0.28)',
-    overflow: 'hidden',
+    overflow: 'visible',
     shadowColor: '#00E5FF',
     shadowOpacity: 0.18,
     shadowRadius: 18,
@@ -582,8 +590,8 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginVertical: 2,
-    gap: 6,
+    marginVertical: 3,
+    gap: 8,
     width: '100%',
     paddingHorizontal: 2,
   },
@@ -594,6 +602,10 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
+  },
+  msgAvatarSpacer: {
+    width: 28,
+    height: 28,
   },
   msgAvatarFallback: {
     width: 28,
@@ -609,11 +621,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
-    flexShrink: 1,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   bubbleMine: {
     backgroundColor: '#00E5FF',
     borderBottomRightRadius: 6,
+    alignSelf: 'flex-end',
   },
   bubbleMineTail: {
     borderBottomRightRadius: 4,
@@ -623,6 +637,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
     borderBottomLeftRadius: 6,
+    alignSelf: 'flex-start',
   },
   bubbleOtherTail: {
     borderBottomLeftRadius: 4,
