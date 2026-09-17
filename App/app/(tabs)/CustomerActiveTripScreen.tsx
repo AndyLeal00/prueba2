@@ -1070,12 +1070,12 @@ const CustomerActiveTripScreen = () => {
 
             {!!booking.otp && !booking.otp_verified && (
               <Text style={s.otpInlineHint}>
-                Comparte este código con tu conductor · Tu conductor te pedirá este código
+                Tu código de seguridad. Compártelo con el conductor para iniciar el viaje.
               </Text>
             )}
             {!!booking.otp && booking.otp_verified && (
               <Text style={[s.otpInlineHint, { color: '#00E676' }]}>
-                Código verificado - Viaje iniciando
+                Código verificado. El viaje está iniciando.
               </Text>
             )}
             {tripNotificationActive ? (
