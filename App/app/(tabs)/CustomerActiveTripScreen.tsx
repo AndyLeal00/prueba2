@@ -37,6 +37,7 @@ import { useAnimatedDriverMarker, fitPickupAndDriver, shouldRefitCamera } from '
 import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import FloatingChatModal from '@/components/FloatingChatModal';
 import ProfilePhotoPreview from '@/components/ProfilePhotoPreview';
+import SearchingDriverLoader from '@/components/SearchingDriverLoader';
 import { formatBookingFareRange } from '@/constants/fare';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
@@ -1040,85 +1041,63 @@ const CustomerActiveTripScreen = () => {
           </View>
         )}
 
-        {/* Status compacto + OTP + valor estimado */}
-        <Animatable.View animation="fadeInUp" duration={400} key={booking.status} useNativeDriver>
-          <View style={[s.statusCardCompact, { borderColor: statusColor() }]}>
-            <View style={s.statusTopRow}>
-              <View style={[s.statusIconWrap, { backgroundColor: `${statusColor()}22`, borderColor: `${statusColor()}55` }]}>
-                <Ionicons name={statusIcon()} size={18} color={statusColor()} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.statusTextCompact}>{statusText()}</Text>
-                <Text style={s.referenceTextCompact}>Ref: {booking.reference}</Text>
-              </View>
-              {!!booking.otp && (
-                <View style={s.otpInlinePill}>
-                  <MaterialCommunityIcons name="lock-check" size={14} color="#00E676" />
-                  <Text style={s.otpInlineCode}>{booking.otp}</Text>
+        {/* Buscando conductor: loader animado */}
+        {(booking.status === 'PENDING' || booking.status === 'NEW') ? (
+          <Animatable.View animation="fadeInUp" duration={450} useNativeDriver>
+            <SearchingDriverLoader
+              reference={booking.reference}
+              fareLabel="Valor estimado"
+              fareValue={formatBookingFareRange(booking)}
+              otp={booking.otp}
+            />
+          </Animatable.View>
+        ) : (
+          /* Status compacto + OTP + valor estimado */
+          <Animatable.View animation="fadeInUp" duration={400} key={booking.status} useNativeDriver>
+            <View style={[s.statusCardCompact, { borderColor: statusColor() }]}>
+              <View style={s.statusTopRow}>
+                <View style={[s.statusIconWrap, { backgroundColor: `${statusColor()}22`, borderColor: `${statusColor()}55` }]}>
+                  <Ionicons name={statusIcon()} size={18} color={statusColor()} />
                 </View>
-              )}
-            </View>
-
-            <View style={s.fareRowCompact}>
-              <Text style={s.priceInStatusLabel}>
-                {booking.status === 'COMPLETE' ? 'Valor final liquidado' : 'Valor estimado'}
-              </Text>
-              <Text style={s.priceInStatusAmountCompact}>
-                {formatBookingFareRange(booking)}
-              </Text>
-            </View>
-
-            {!!booking.otp && !booking.otp_verified && (
-              <Text style={s.otpInlineHint}>
-                Tu código de seguridad. Compártelo con el conductor para iniciar el viaje.
-              </Text>
-            )}
-            {!!booking.otp && booking.otp_verified && (
-              <Text style={[s.otpInlineHint, { color: '#00E676' }]}>
-                Código verificado. El viaje está iniciando.
-              </Text>
-            )}
-            {tripNotificationActive ? (
-              <Text style={s.notificationHintCompact}>
-                Notificación activa en segundo plano. Toca para volver a esta pantalla.
-              </Text>
-            ) : null}
-          </View>
-        </Animatable.View>
-
-        {/* Cancelar viaje - solo antes de que el conductor confirme su llegada */}
-        {(() => {
-          const st = booking.status;
-          const driverHasArrived = st === 'ARRIVED' || !!booking.otp_timer_started_at;
-          const canCancel = st !== 'COMPLETE'
-            && st !== 'CANCELLED'
-            && st !== 'ACCEPTED'
-            && st !== 'STARTED'
-            && st !== 'IN_PROGRESS'
-            && st !== 'TRIP_STARTED'
-            && !booking.otp_verified
-            && !driverHasArrived;
-          if (!canCancel) return null;
-          return (
-            <Animatable.View animation="fadeInUp" duration={400} useNativeDriver>
-              <TouchableOpacity
-                style={s.cancelTripBtn}
-                activeOpacity={0.85}
-                onPress={handleCancelTrip}
-                disabled={cancelling}
-              >
-                {cancelling ? (
-                  <ActivityIndicator size="small" color="#FF5C7A" />
-                ) : (
-                  <>
-                    <Ionicons name="close-circle" size={20} color="#FF5C7A" />
-                    <Text style={s.cancelTripBtnText}>Cancelar viaje</Text>
-                  </>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.statusTextCompact}>{statusText()}</Text>
+                  <Text style={s.referenceTextCompact}>Ref: {booking.reference}</Text>
+                </View>
+                {!!booking.otp && (
+                  <View style={s.otpInlinePill}>
+                    <MaterialCommunityIcons name="lock-check" size={14} color="#00E676" />
+                    <Text style={s.otpInlineCode}>{booking.otp}</Text>
+                  </View>
                 )}
-              </TouchableOpacity>
-            </Animatable.View>
-          );
-        })()}
+              </View>
+
+              <View style={s.fareRowCompact}>
+                <Text style={s.priceInStatusLabel}>
+                  {booking.status === 'COMPLETE' ? 'Valor final liquidado' : 'Valor estimado'}
+                </Text>
+                <Text style={s.priceInStatusAmountCompact}>
+                  {formatBookingFareRange(booking)}
+                </Text>
+              </View>
+
+              {!!booking.otp && !booking.otp_verified && (
+                <Text style={s.otpInlineHint}>
+                  Presenta este código al conductor para verificar tu identidad e iniciar el viaje.
+                </Text>
+              )}
+              {!!booking.otp && booking.otp_verified && (
+                <Text style={[s.otpInlineHint, { color: '#00E676' }]}>
+                  Código verificado. El viaje está iniciando.
+                </Text>
+              )}
+              {tripNotificationActive ? (
+                <Text style={s.notificationHintCompact}>
+                  Notificación activa en segundo plano. Toca para volver a esta pantalla.
+                </Text>
+              ) : null}
+            </View>
+          </Animatable.View>
+        )}
 
         {/* ⭐ Calificación del Conductor - Solo cuando el viaje está completado */}
         {booking.status === 'COMPLETE' && (
@@ -1536,6 +1515,40 @@ const CustomerActiveTripScreen = () => {
             </View>
           </Animatable.View>
         ) : null}
+
+        {/* Cancelar viaje — al final del scroll, solo antes de llegada del conductor */}
+        {(() => {
+          const st = booking.status;
+          const driverHasArrived = st === 'ARRIVED' || !!booking.otp_timer_started_at;
+          const canCancel = st !== 'COMPLETE'
+            && st !== 'CANCELLED'
+            && st !== 'ACCEPTED'
+            && st !== 'STARTED'
+            && st !== 'IN_PROGRESS'
+            && st !== 'TRIP_STARTED'
+            && !booking.otp_verified
+            && !driverHasArrived;
+          if (!canCancel) return null;
+          return (
+            <Animatable.View animation="fadeInUp" duration={400} useNativeDriver style={{ marginTop: 8, marginBottom: 24 }}>
+              <TouchableOpacity
+                style={s.cancelTripBtn}
+                activeOpacity={0.85}
+                onPress={handleCancelTrip}
+                disabled={cancelling}
+              >
+                {cancelling ? (
+                  <ActivityIndicator size="small" color="#FF5C7A" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle" size={20} color="#FF5C7A" />
+                    <Text style={s.cancelTripBtnText}>Cancelar viaje</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </Animatable.View>
+          );
+        })()}
       </ScrollView>
 
       {/* Modal: mapa fullscreen con 3D */}
