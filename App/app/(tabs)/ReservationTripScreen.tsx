@@ -33,6 +33,7 @@ import { formatBookingFareRange } from '@/constants/fare';
 import { fetchAndSyncUserRating } from '@/common/utils/userRating';
 import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import FloatingChatModal from '@/components/FloatingChatModal';
+import ProfilePhotoPreview from '@/components/ProfilePhotoPreview';
 import StarRating from 'react-native-star-rating-widget';
 
 const NEQUI_LOGO_URI = 'https://img.logo.dev/nequi.com.co?token=pk_c_F6FSsGSaKey4lkmcDLNw';
@@ -1466,13 +1467,12 @@ const ReservationTripScreen = () => {
         {/* Reservation info summary */}
         <View style={s.infoCard}>
           <View style={s.infoRow}>
-            {customerPhoto ? (
-              <Image source={{ uri: customerPhoto }} style={s.customerAvatar} />
-            ) : (
-              <View style={s.customerAvatarFallback}>
-                <Ionicons name="person" size={14} color="#00E5FF" />
-              </View>
-            )}
+            <ProfilePhotoPreview
+              uri={customerPhoto}
+              size={32}
+              fallbackIconSize={14}
+              accessibilityLabel="Ver foto del cliente"
+            />
             <Text style={s.infoName}>{reservation.customer_name}</Text>
             <View style={s.actionBtnsRow}>
               <TouchableOpacity style={s.chatBtn} onPress={openChat} activeOpacity={0.75}>

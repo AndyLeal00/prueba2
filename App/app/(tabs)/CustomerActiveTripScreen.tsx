@@ -36,6 +36,7 @@ import { shareTrip } from '@/common/utils/tripShare';
 import { useAnimatedDriverMarker, fitPickupAndDriver, shouldRefitCamera } from '@/hooks/useAnimatedDriverMarker';
 import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import FloatingChatModal from '@/components/FloatingChatModal';
+import ProfilePhotoPreview from '@/components/ProfilePhotoPreview';
 import { formatBookingFareRange } from '@/constants/fare';
 
 const BG_IMAGE = require('../../assets/images/bg.png');
@@ -1269,13 +1270,11 @@ const CustomerActiveTripScreen = () => {
               <Text style={s.sectionTitleCompact}>Tu Conductor</Text>
 
               <View style={s.driverCard}>
-                {driverPhotoUri ? (
-                  <Image source={{ uri: driverPhotoUri }} style={s.driverAvatar} />
-                ) : (
-                  <View style={s.driverAvatarFallback}>
-                    <Ionicons name="person" size={18} color="#00E5FF" />
-                  </View>
-                )}
+                <ProfilePhotoPreview
+                  uri={driverPhotoUri}
+                  size={40}
+                  accessibilityLabel="Ver foto del conductor"
+                />
                 <View style={s.driverInfo}>
                   <Text style={s.driverName} numberOfLines={1}>{booking.driver_name}</Text>
                   <Text style={s.driverPlate} numberOfLines={1}>
