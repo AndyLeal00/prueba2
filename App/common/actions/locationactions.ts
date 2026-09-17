@@ -26,7 +26,7 @@ const trackingChannels = new Map<string, RealtimeChannel>();
 
 // Save tracking location to Supabase booking_tracking
 export const saveTracking = async (bookingId: string, location: Location) => {
-    const { error } = await supabase.from('booking_tracking' as any).insert({
+    const { error } = await supabase.from('booking_tracking_v2' as any).insert({
         booking_id: bookingId,
         driver_id: location.driver_id || null,
         lat: location.lat,
@@ -44,7 +44,7 @@ export const fetchBookingLocations = (bookingId: string) => async (dispatch: Dis
 
     // Seed with the most recent point so subscribers don't wait for the next insert
     const { data: latest } = await supabase
-        .from('booking_tracking' as any)
+        .from('booking_tracking_v2' as any)
         .select('lat, lng, timestamp')
         .eq('booking_id', bookingId)
         .order('timestamp', { ascending: false })

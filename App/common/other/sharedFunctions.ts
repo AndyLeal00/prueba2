@@ -133,7 +133,7 @@ export const addActualsToBooking = async (
   let dbTripStart: string | null = null;
   try {
     const { data: startRow } = await supabase
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .select('trip_start_time, distance')
       .eq('id', booking.id)
       .maybeSingle();
@@ -219,7 +219,7 @@ export const addActualsToBooking = async (
       const localBackup = await getLocalTrackingBackup(booking.id);
       if (localBackup.length > 0) {
         const { data: serverPts } = await supabase
-          .from('booking_tracking' as any)
+          .from('booking_tracking_v2' as any)
           .select('lat, lng')
           .eq('booking_id', booking.id);
         // El mismo punto capturado llega al servidor con OTRO `created_at` (lo
@@ -252,7 +252,7 @@ export const addActualsToBooking = async (
             created_at: new Date(p.ts).toISOString(),
           }));
           const { error: reconcileError } = await supabase
-            .from('booking_tracking' as any)
+            .from('booking_tracking_v2' as any)
             .insert(rows as any);
           if (reconcileError) {
             console.error('[addActualsToBooking] error subiendo respaldo local:', reconcileError);
@@ -270,7 +270,7 @@ export const addActualsToBooking = async (
     // inexistente); el error no se chequeaba, así que `trackingRows` quedaba
     // undefined y `distance` siempre daba 0 sin ningún error visible.
     const { data: trackingRows, error: trackingError } = await supabase
-      .from('booking_tracking' as any)
+      .from('booking_tracking_v2' as any)
       .select('lat, lng, created_at, accuracy')
       .eq('booking_id', booking.id)
       .order('created_at', { ascending: true });
@@ -375,7 +375,7 @@ export const addActualsToBooking = async (
   // Actualizar en Supabase
   try {
     await supabase
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .update({
         trip_cost:        booking.trip_cost,
         driver_share:     booking.driver_share,

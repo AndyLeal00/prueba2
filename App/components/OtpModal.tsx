@@ -6,7 +6,8 @@ import { useColorScheme } from "react-native";
 interface OtpModalProps {
   requestModalClose: () => void;
   modalVisible: boolean;
-  otp: string;
+  otp?: string;
+  verifyOtp?: (code: string) => Promise<boolean>;
   onMatch: (isMatch: boolean) => void;
   timeRemaining?: number; // 🔴 NUEVO: recibe tiempo sincronizado
   isExpired?: boolean; // 🔴 NUEVO: indica si el timer ya expiró
@@ -17,6 +18,7 @@ const OtpModal: React.FC<OtpModalProps> = ({
   modalVisible,
   otp,
   onMatch,
+  verifyOtp,
   timeRemaining = 0, // Default a 0 si no se pasa
   isExpired = true, // Default a true (código listo)
 }) => {
@@ -26,12 +28,11 @@ const OtpModal: React.FC<OtpModalProps> = ({
   useEffect(() => {
     if (modalVisible) {
       setInputValue("");
-      console.log("🔐 [OTP MODAL] 📱 Código de verificación:", otp);
     }
   }, [modalVisible, otp]);
 
-  const handleConfirm = () => {
-    const isMatch = parseInt(inputValue, 10) === parseInt(otp, 10);
+  const handleConfirm = async () => {
+    const isMatch = verifyOtp ? await verifyOtp(inputValue).catch(() => false) : false;
     
     onMatch(isMatch);
     if (isMatch) {
@@ -64,13 +65,7 @@ const OtpModal: React.FC<OtpModalProps> = ({
           <View style={styles.modalContainerViewStyle}>
             <Text style={styles.titleText}>Código de Verificación</Text>
             
-            {/* Mostrar el código OTP al conductor */}
-            <View style={styles.otpDisplayContainer}>
-              <Text style={styles.otpLabel}>Código del viaje:</Text>
-              <Text style={styles.otpCode}>{otp}</Text>
-            </View>
-
-            <Text style={styles.instructionText}>Digita el código para iniciar el viaje</Text>
+            <Text style={styles.instructionText}>Pide al cliente su código y digítalo para iniciar el viaje.</Text>
             
             <TextInput
               style={styles.input}

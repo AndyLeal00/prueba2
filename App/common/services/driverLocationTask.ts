@@ -114,21 +114,24 @@ TaskManager.defineTask(DRIVER_LOCATION_TASK, async ({ data, error }) => {
     console.warn('[driverLocationTask] error guardando respaldo local:', e);
   }
 
-  // RLS está desactivado en booking_tracking — anon key es suficiente.
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/booking_tracking`, {
+  // V2 requires the driver's session and resolves profile/vehicle IDs server-side.
+  const session = await getSafeSession();
+  if (!session?.access_token) return;
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/record_vehicle_position`, {
     method: 'POST',
     headers: {
       'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Profile': 'booking_v2',
       'Content-Type': 'application/json',
       'Prefer': 'return=minimal',
     },
     body: JSON.stringify({
-      booking_id: bookingId,
-      driver_id: driverId,
-      lat,
-      lng,
-      accuracy: accuracy ?? null,
+      p_booking_id: bookingId,
+      p_lat: lat,
+      p_lng: lng,
+      p_accuracy: accuracy ?? null,
+      p_recorded_at: new Date(latest.timestamp).toISOString(),
     }),
   });
 

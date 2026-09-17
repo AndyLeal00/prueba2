@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
+import supabase from '@/config/SupabaseConfig';
 import { useDispatch, useSelector } from 'react-redux';
 import GetPushToken from '@/components/GetPushToken';
 import { updatePushToken } from '@/common/actions/authactions';
@@ -34,6 +35,11 @@ export function usePushTokenRegistration() {
           return;
         }
         await dispatch(updatePushToken(token, Platform.OS === 'ios' ? 'IOS' : 'ANDROID') as any);
+        if (cancelled) return;
+        const {error} = await (supabase as any).schema('booking_v2').rpc('register_push_device', {
+          p_token:token,p_platform:Platform.OS === 'ios' ? 'IOS' : 'ANDROID',
+        });
+        if(error) throw new Error(error.message);
       } catch (e) {
         console.warn('[PushToken] registro falló:', e);
       }

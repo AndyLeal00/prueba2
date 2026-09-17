@@ -288,7 +288,7 @@ const CustomerActiveTripScreen = () => {
       const headers = await getSupabaseAuthHeaders(true);
       const now = new Date();
       const reason = 'Cliente canceló el viaje';
-      const url = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${booking.id}`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?id=eq.${booking.id}`;
       const res = await fetch(url, {
         method: 'PATCH',
         headers: { ...headers, Prefer: 'return=representation' },
@@ -339,7 +339,7 @@ const CustomerActiveTripScreen = () => {
     try {
       const headers = await getSupabaseAuthHeaders(true);
 
-      const patchUrl = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${booking.id}`;
+      const patchUrl = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?id=eq.${booking.id}`;
       const res = await fetch(patchUrl, {
         method: 'PATCH',
         headers: { ...headers, Prefer: 'return=representation' },
@@ -354,7 +354,7 @@ const CustomerActiveTripScreen = () => {
       if (booking.driver_id) {
         try {
           const headersRead = await getSupabaseAuthHeaders();
-          const listUrl = `${SUPABASE_URL}/rest/v1/bookings?driver_id=eq.${booking.driver_id}&driver_rating=not.is.null&select=driver_rating`;
+          const listUrl = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?driver_id=eq.${booking.driver_id}&driver_rating=not.is.null&select=driver_rating`;
           const listRes = await fetch(listUrl, { headers: headersRead });
           if (listRes.ok) {
             const rows: Array<{ driver_rating: number }> = await listRes.json();
@@ -390,7 +390,7 @@ const CustomerActiveTripScreen = () => {
     try {
       const headers = await getSupabaseAuthHeaders();
       // Usar select=* para obtener todos los campos disponibles - evita errores de campos inexistentes
-      const url = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${bookingId}&select=*`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?id=eq.${bookingId}&select=*`;
       console.log('🔍 [FETCH BOOKING] URL:', url);
       const res = await fetch(url, { headers });
       if (!res.ok) {

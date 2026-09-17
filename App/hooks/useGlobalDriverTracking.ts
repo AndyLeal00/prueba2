@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import * as Location from 'expo-location';
+import { AppState } from 'react-native';
 import { useSelector } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { RootState } from '@/common/store/store';
@@ -73,6 +75,45 @@ export function useGlobalDriverTracking() {
     user?.user_metadata?.id,
   ].filter(Boolean);
   const candidatesKey = idCandidates.join('|');
+  const online = Boolean(profile?.driver_active_status ?? user?.driver_active_status ?? user?.driverActiveStatus);
+
+  // Available vehicles publish in foreground; active trips retain the native background task.
+  useEffect(() => {
+    if (!isDriver || !online) return;
+    let disposed = false;
+    let watcher: Location.LocationSubscription | null = null;
+    let inFlight = false;
+    let starting = false;
+    let lastPublished = 0;
+    const start = async () => {
+      if (watcher || starting || disposed || AppState.currentState !== 'active') return;
+      starting = true;
+      try {
+        const permission = await Location.getForegroundPermissionsAsync();
+        if (permission.status !== 'granted' || disposed) return;
+        const next = await Location.watchPositionAsync({accuracy:Location.Accuracy.High,timeInterval:10000,distanceInterval:0}, async point => {
+          if (disposed || inFlight || AppState.currentState !== 'active' || Date.now()-lastPublished<5000) return;
+          inFlight = true;
+          try {
+            const {error} = await (supabase as any).schema('booking_v2').rpc('record_vehicle_position', {
+              p_lat:point.coords.latitude,p_lng:point.coords.longitude,p_accuracy:point.coords.accuracy,
+              p_recorded_at:new Date(point.timestamp).toISOString(),p_booking_id:null,
+            });
+            if(error) console.warn('[VehicleMap] GPS not saved:',error.message);
+            else lastPublished = Date.now();
+          } catch(error) { console.warn('[VehicleMap] GPS request failed:',error); }
+          finally { inFlight = false; }
+        });
+        if (disposed || AppState.currentState !== 'active') next.remove(); else watcher = next;
+      } catch(error) { console.warn('[VehicleMap] Foreground GPS unavailable:',error); }
+      finally { starting = false; }
+    };
+    void start();
+    const subscription = AppState.addEventListener('change',state => {
+      if(state === 'active') void start(); else {watcher?.remove();watcher=null;}
+    });
+    return () => {disposed=true;watcher?.remove();subscription.remove();};
+  }, [isDriver, online, candidatesKey]);
 
   useEffect(() => {
     console.log('[GlobalDriverTracking] userType="' + userType + '" isDriver=' + isDriver + ' candidates=' + idCandidates.length + ' [' + candidatesKey + ']');
@@ -101,7 +142,7 @@ export function useGlobalDriverTracking() {
         }
 
         const statuses = ACTIVE_STATUSES.map(s => `"${s}"`).join(',');
-        const url = `${SUPABASE_URL}/rest/v1/bookings?driver_id=eq.${publicDriverId}&status=in.(${statuses})&order=created_at.desc&limit=1&select=id,status`;
+        const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?driver_id=eq.${publicDriverId}&status=in.(${statuses})&order=created_at.desc&limit=1&select=id,status`;
         const resp = await fetch(url, { headers });
         if (!resp.ok) {
           console.error('[GlobalDriverTracking] bookings query failed:', resp.status, await resp.text());

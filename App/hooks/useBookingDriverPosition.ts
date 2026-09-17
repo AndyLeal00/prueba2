@@ -41,7 +41,7 @@ export function useBookingDriverPosition(bookingId: string | null | undefined): 
     // ── 1. Query inicial ───────────────────────────────────────────────────────
     const fetchLatest = async () => {
       const { data, error: fetchError } = await supabase
-        .from('booking_tracking' as any)
+        .from('booking_tracking_v2' as any)
         .select('lat, lng, accuracy, created_at')
         .eq('booking_id', bookingId)
         .order('created_at', { ascending: false })

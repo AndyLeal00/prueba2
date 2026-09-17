@@ -1,3 +1,4 @@
+import { bookingV2LegacyFetch } from '@/config/SupabaseConfig';
 import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
@@ -89,7 +90,7 @@ export default function PaymentScreen(props) {
 
     // Carga inicial del booking desde Supabase
     supabase
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .select('*')
       .eq('id', booking.id)
       .single()
@@ -275,7 +276,7 @@ export default function PaymentScreen(props) {
             }
           } else {
                  // Enviar notificación
-                 fetch('https://us-central1-treasupdate.cloudfunctions.net/sendMassNotification', {
+                 bookingV2LegacyFetch('https://us-central1-treasupdate.cloudfunctions.net/sendMassNotification', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',

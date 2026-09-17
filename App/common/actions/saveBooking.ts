@@ -93,7 +93,7 @@ export const saveBooking = async (bookingData: any) => {
 
     // Insertar en Supabase
     const { data, error } = await (supabase as any)
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .insert([supabaseBooking])
       .select()
       .single();

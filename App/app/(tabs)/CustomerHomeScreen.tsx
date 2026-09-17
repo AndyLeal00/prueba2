@@ -268,7 +268,7 @@ const CustomerHomeScreen = () => {
       if (!uid) return;
       const statuses = ['PENDING', 'ACCEPTED', 'ARRIVED', 'STARTED', 'IN_PROGRESS', 'TRIP_STARTED', 'NEW']
         .map(s => `"${s}"`).join(',');
-      const url = `${SUPABASE_URL}/rest/v1/bookings?customer=eq.${uid}&status=in.(${statuses})&order=created_at.desc&limit=1&select=id,status`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?customer=eq.${uid}&status=in.(${statuses})&order=created_at.desc&limit=1&select=id,status`;
       const resp = await fetch(url, { headers });
       if (!resp.ok) return;
       const rows = await resp.json();

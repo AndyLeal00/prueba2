@@ -1,3 +1,4 @@
+import { bookingV2LegacyPost } from '@/config/SupabaseConfig';
 import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
 import supabase from "../../config/SupabaseConfig";
 import axios from "axios";
@@ -11,7 +12,7 @@ const insertTrackingPoint = async (
   status?: string,
 ) => {
   console.log('[tracking] insert', { bookingId, driverId, status, driverLocation });
-  const { error } = await supabase.from('booking_tracking' as any).insert({
+  const { error } = await supabase.from('booking_tracking_v2' as any).insert({
     booking_id: bookingId,
     driver_id: driverId || null,
     lat: driverLocation.lat,
@@ -98,12 +99,12 @@ const updateBookingInSupabase = async (booking: any) => {
   if (booking.drop?.lat)                       payload.drop_lat = booking.drop.lat;
   if (booking.drop?.lng)                       payload.drop_lng = booking.drop.lng;
   if (booking.drop?.add)                       payload.drop_address = booking.drop.add;
-  if (booking.reason)                          payload.observations = booking.reason;
+  if (booking.reason)                          payload.reason = booking.reason;
   if (booking.coords)                          payload.coords = booking.coords;
   if (booking.distance !== undefined)          payload.distance = booking.distance;
   if (booking.driver_arrived_time)             payload.driver_arrived_time = booking.driver_arrived_time;
 
-  const { error } = await supabase.from('bookings').update(payload).eq('id', booking.id);
+  const { error } = await supabase.from('bookings_v2_mobile' as any).update(payload).eq('id', booking.id);
   if (error) throw new Error(error.message);
   return booking;
 };
@@ -248,10 +249,10 @@ export const updateBookingAsync =
 
         if (booking.rating) {
           // Guardar rating del conductor en Supabase
-          await supabase.from('bookings').update({ rating: booking.rating } as any).eq('id', booking.id);
+          await supabase.from('bookings_v2_mobile' as any).update({ rating: booking.rating } as any).eq('id', booking.id);
           // Actualizar rating promedio del conductor en users
           const { data: pastBookings } = await supabase
-            .from('bookings')
+            .from('bookings_v2_mobile' as any)
             .select('rating')
             .eq('driver', booking.driver)
             .not('rating', 'is', null);
@@ -293,7 +294,7 @@ export const updateBookingAsync =
       const token = state.auth.user?.pushToken;
       if (token) {
         try {
-          await axios.post(
+          await bookingV2LegacyPost(
             'https://us-central1-treasupdate.cloudfunctions.net/sendNotification',
             { token, title: 'Nueva Reserva', body: 'Tienes una nueva reserva' }
           );
@@ -303,7 +304,7 @@ export const updateBookingAsync =
 
     // Carga inicial: reservas NEW existentes
     supabase
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .select('*')
       .eq('status', 'NEW')
       .then(({ data }) => {
@@ -395,7 +396,7 @@ export const acceptBooking = createAsyncThunk(
       const rawPhone = driverProfile.mobile || driverProfile.phone || driverProfile.phoneNumber || '';
       const mobileRaw = rawPhone.replace(/^\+57/, '');
       await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .update({
           driver: driverProfile.uid || driverProfile.id || '',
           status: 'ACCEPTED',
@@ -415,7 +416,7 @@ export const acceptBooking = createAsyncThunk(
 
       // Verificar que la actualización se realizó en Supabase
       const { data: verifyData } = await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .select('driver')
         .eq('id', booking.id)
         .single();
@@ -494,7 +495,7 @@ const updateBookingStatus = async (booking: Booking) => {
 
 const sendNotification = async (notificationData: any) => {
   try {
-    await axios.post(
+    await bookingV2LegacyPost(
       "https://us-central1-treasupdate.cloudfunctions.net/sendNotification",
       notificationData
     );
@@ -807,7 +808,7 @@ export const fetchRecentDrivers = createAsyncThunk(
       }
 
       const { data: bookings, error } = await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .select('driver, driver_name')
         .eq('customer', currentUser.uid || currentUser.id)
         .eq('status', 'COMPLETE')
@@ -833,7 +834,7 @@ export const shareDriverLocation = createAsyncThunk(
   async ({ bookingId }, { getState }) => {
     // Obtener reserva desde Supabase
     const { data: bookingData, error: bookingErr } = await supabase
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .select('driver')
       .eq('id', bookingId)
       .single();
@@ -843,7 +844,7 @@ export const shareDriverLocation = createAsyncThunk(
 
     // Obtener último punto de tracking del conductor
     const { data: trackData } = await supabase
-      .from('booking_tracking' as any)
+      .from('booking_tracking_v2' as any)
       .select('lat, lng')
       .eq('driver_id', driverId)
       .order('timestamp', { ascending: false })
@@ -883,14 +884,14 @@ export const reportIncident = createAsyncThunk(
       console.log("Incidente:", incident);
 
       const { data: bookingData, error: fetchErr } = await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .select('customer')
         .eq('id', bookingId)
         .single();
       if (fetchErr || !bookingData) throw new Error('Reserva no encontrada.');
 
       const { error: updateErr } = await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .update({
           observations: incident,
           driver: null,

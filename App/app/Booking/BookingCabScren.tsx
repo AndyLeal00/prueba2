@@ -1,3 +1,5 @@
+import { bookingV2LegacyFetch } from '@/config/SupabaseConfig';
+import { OtpService } from '@/common/services/OtpService';
 import React, {
   useRef,
   useMemo,
@@ -377,7 +379,7 @@ const BookingCabScreen = () => {
     const subscription = AppState.addEventListener('change', async (nextState) => {
       if (nextState === 'active') {
         const { data } = await supabase
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('status, cancelled_by')
           .eq('id', currentBooking.id)
           .single();
@@ -433,7 +435,7 @@ const BookingCabScreen = () => {
       try {
         // Seed with the latest known point so the marker appears immediately
         const { data: latest, error: latestError } = await supabase
-          .from('booking_tracking')
+          .from('booking_tracking_v2' as any)
           .select('lat, lng, created_at')
           .eq('booking_id', currentBooking.id)
           .order('created_at', { ascending: false })
@@ -561,7 +563,7 @@ const BookingCabScreen = () => {
     return () => clearInterval(timer);
   }, [driverLocation, currentBooking?.pickup, currentBooking?.status, user?.usertype]);
 
-  const handleStartTrip = () => {
+  const handleStartTrip = async () => {
     if (currentBooking?.status === "CANCELLED") {
       return showAlert(
         'warning',
@@ -569,8 +571,12 @@ const BookingCabScreen = () => {
         'El cliente canceló el viaje. No es posible iniciarlo.'
       );
     }
-    // OTP only for customers; drivers don't need to verify OTP
-    if (user?.usertype === 'driver') return;
+    // The customer sees the code; only the assigned driver verifies it on the server.
+    if (user?.usertype !== 'driver') return;
+    if (currentBooking?.status === 'ACCEPTED') {
+      const { error } = await (supabase as any).from('bookings_v2_mobile').update({status:'ARRIVED'}).eq('id',currentBooking.id);
+      if (error) return showAlert('error','No se pudo confirmar la llegada',error.message);
+    }
     setOtpModalVisible(true);
 
     if (Platform.OS === "android") {
@@ -599,7 +605,7 @@ const BookingCabScreen = () => {
           onClose={() => setIsCountdownModalVisible(false)} // Cerrar el modal
         />;
         // Enviar notificaci�n
-        fetch(
+        bookingV2LegacyFetch(
           "https://us-central1-treasupdate.cloudfunctions.net/sendMassNotification",
           {
             method: "POST",
@@ -658,7 +664,7 @@ const BookingCabScreen = () => {
       // Actualizar la reserva en la base de datos
       const bookingId = currentBooking.uid || currentBooking.id;
       await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .update({ customer_arrived_time: arrivedTime } as any)
         .eq('id', bookingId);
 
@@ -708,7 +714,7 @@ const BookingCabScreen = () => {
   const handleArrived = async () => {
     // Verify current status from DB to catch cancellations the realtime may have missed
     const { data: latestRow } = await supabase
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .select('status, cancelled_by')
       .eq('id', currentBooking.id)
       .single();
@@ -733,7 +739,7 @@ const BookingCabScreen = () => {
     try {
       const result = await dispatch(arriveBooking(currentBooking)).unwrap();
       // Enviar notificaci�n
-      fetch(
+      bookingV2LegacyFetch(
         "https://us-central1-treasupdate.cloudfunctions.net/sendMassNotification",
         {
           method: "POST",
@@ -1325,7 +1331,7 @@ const BookingCabScreen = () => {
       // Guardar calificación del cliente (por parte del conductor) en Supabase
       try {
         await supabase
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .update({
             customer_rating: customerRating,
             customer_review: customerReview || null,
@@ -1334,7 +1340,7 @@ const BookingCabScreen = () => {
 
         // Actualizar el promedio de calificación del cliente en users
         const { data: pastBookings } = await supabase
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('customer_rating')
           .eq('customer', currentBooking.customer)
           .not('customer_rating', 'is', null);
@@ -1368,7 +1374,7 @@ const BookingCabScreen = () => {
         let booking = { ...result };
         // Enviar notificaci�n
 
-        fetch(
+        bookingV2LegacyFetch(
           "https://us-central1-treasupdate.cloudfunctions.net/sendMassNotification",
           {
             method: "POST",
@@ -1662,7 +1668,7 @@ const BookingCabScreen = () => {
                           const newPrice = parseFloat(currentBooking?.trip_cost || currentBooking?.estimate || 0) + priceAdjustment;
                           try {
                             await supabase
-                              .from('bookings')
+                              .from('bookings_v2_mobile' as any)
                               .update({ trip_cost: newPrice, estimate: newPrice } as any)
                               .eq('id', currentBooking.id);
                             setCurrentBooking((prev: any) => ({ ...prev, trip_cost: newPrice, estimate: newPrice }));
@@ -1801,11 +1807,12 @@ const BookingCabScreen = () => {
               />
             </>
           )}
-          {otpModalVisible && user?.usertype !== 'driver' && (
+          {otpModalVisible && user?.usertype === 'driver' && (
             <OtpModal
               modalVisible={otpModalVisible}
               requestModalClose={() => setOtpModalVisible(false)}
               otp={currentBooking?.otp}
+              verifyOtp={(code) => OtpService.validateOtp(currentBooking.id, code)}
               onMatch={handleOtpMatch}
             />
           )}

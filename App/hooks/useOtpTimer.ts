@@ -36,7 +36,7 @@ export const useOtpTimer = ({
   const fetchTimerState = useCallback(async () => {
     try {
       const { data, error } = await (supabase as any)
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .select('otp_timer_started_at, otp_timer_duration')
         .eq('id', bookingId)
         .single();
@@ -105,7 +105,7 @@ export const useOtpTimer = ({
     try {
       const now = new Date().toISOString();
       const { error } = await (supabase as any)
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .update({ otp_timer_started_at: now, otp_timer_duration: 180 })
         .eq('id', bookingId);
 
@@ -123,7 +123,7 @@ export const useOtpTimer = ({
   const resetTimer = useCallback(async () => {
     try {
       const { error } = await (supabase as any)
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .update({ otp_timer_started_at: null, otp_timer_duration: 180 })
         .eq('id', bookingId);
 

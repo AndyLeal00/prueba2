@@ -796,7 +796,7 @@ const snapPoints = useMemo(() => ["35%", "55%", "85%"], []); // Map visible in t
       try {
         const headers = await getSupabaseAuthHeaders();
         const statuses = ACTIVE_IMMEDIATE_STATUSES.map((s) => `"${s}"`).join(',');
-        const url = `${SUPABASE_URL}/rest/v1/bookings?customer=eq.${user.id}&status=in.(${statuses})&select=id`;
+        const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?customer=eq.${user.id}&status=in.(${statuses})&select=id`;
         const resp = await fetch(url, { headers });
         if (resp.ok) {
           const rows = await resp.json();

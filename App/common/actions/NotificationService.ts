@@ -1,3 +1,4 @@
+import { bookingV2LegacyPost } from '@/config/SupabaseConfig';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -63,7 +64,7 @@ export async function sendPushNotification(token, title, body) {
   try {
     //console.log('Sending push notification:', { token, title, body });
 
-    const response = await axios.post('https://us-central1-treasupdate.cloudfunctions.net/sendNotification', {
+    const response = await bookingV2LegacyPost('https://us-central1-treasupdate.cloudfunctions.net/sendNotification', {
       token,
       title,
       body,

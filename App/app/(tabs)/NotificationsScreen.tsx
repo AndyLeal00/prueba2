@@ -26,7 +26,7 @@ const autoCancelExpiredBooking = async (booking: any) => {
       customer_status: `${booking.customer || ''}_CANCELLED`,
       driver_status: booking.driver ? `${booking.driver}_CANCELLED` : null,
     };
-    await (supabase as any).from('bookings').update(payload).eq('id', booking.id);
+    await (supabase as any).from('bookings_v2_mobile' as any).update(payload).eq('id', booking.id);
   } catch (e) {
     console.warn('[Notifications] auto-cancel error', e);
   }
@@ -312,8 +312,8 @@ const NotificationsScreen = () => {
       // solo veía el más reciente.
       const driverLimit = 30;
       const url = isDriver
-        ? `${SUPABASE_URL}/rest/v1/bookings?driver_id=eq.${uid}&status=in.(${statuses})&order=created_at.desc&limit=${driverLimit}&select=*`
-        : `${SUPABASE_URL}/rest/v1/bookings?customer=eq.${uid}&status=in.(${statuses})&order=created_at.desc&limit=${customerLimit}&select=*`;
+        ? `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?driver_id=eq.${uid}&status=in.(${statuses})&order=created_at.desc&limit=${driverLimit}&select=*`
+        : `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?customer=eq.${uid}&status=in.(${statuses})&order=created_at.desc&limit=${customerLimit}&select=*`;
       const resp = await fetch(url, { headers });
       if (!resp.ok) { setLoading(false); return; }
       const rows = await resp.json();

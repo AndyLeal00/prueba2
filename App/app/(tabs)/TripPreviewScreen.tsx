@@ -455,7 +455,7 @@ const TripPreviewScreen = () => {
       console.log("🔍 [RecentTrips] Haciendo fetch...");
 
       // Fetch directo a PostgREST
-      const fetchUrl = `${baseUrl}/rest/v1/bookings?select=id,customer_id,pickup_location,destination_location,drop_location,pickup_address,drop_address,created_at,distance,duration,status&customer_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=5`;
+      const fetchUrl = `${baseUrl}/rest/v1/bookings_v2_mobile?select=id,customer_id,pickup_location,destination_location,drop_location,pickup_address,drop_address,created_at,distance,duration,status&customer_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=5`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);

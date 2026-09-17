@@ -1,3 +1,4 @@
+import { bookingV2LegacyFetch } from '@/config/SupabaseConfig';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image,
@@ -27,7 +28,7 @@ const BG_IMAGE = require('../../assets/images/bg.png');
 const sendPushNotification = async (token: string, title: string, body: string) => {
   if (!token) return;
   try {
-    await fetch('https://us-central1-treasupdate.cloudfunctions.net/sendNotification', {
+    await bookingV2LegacyFetch('https://us-central1-treasupdate.cloudfunctions.net/sendNotification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, title, body }),
@@ -356,7 +357,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
     try {
       const headers = await getSupabaseAuthHeaders();
       // Filtro explícito: SOLO reservas programadas
-      const url = `${SUPABASE_URL}/rest/v1/bookings?booking_type=eq.reservation&status=eq.PENDING&order=booking_date.asc`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?booking_type=eq.reservation&status=eq.PENDING&order=booking_date.asc`;
       console.log('[RESERVAS] Trayendo reservas con filtro:', url);
       const res = await fetch(url, { headers });
       console.log(`📡 [RESERVAS] Response status: ${res.status}`);
@@ -418,7 +419,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
       
       // Traer inmediatos recientes y filtrar en cliente para evitar perder filas
       // cuando driver/driver_id vienen null, vacíos o con formatos distintos.
-      const urlImmediates = `${SUPABASE_URL}/rest/v1/bookings?booking_type=eq.immediate&limit=1000&select=*&order=created_at.desc`;
+      const urlImmediates = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?booking_type=eq.immediate&limit=1000&select=*&order=created_at.desc`;
       
       console.log('🟢 [INMEDIATOS] Query:', urlImmediates);
       
@@ -631,7 +632,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
       const driverId = await resolveDriverId();
 
       // First check it's still available (get without status filter, then check in code)
-      const checkUrl = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${reservation.id}&booking_type=eq.${reservation.booking_type}&select=id,status`;
+      const checkUrl = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?id=eq.${reservation.id}&booking_type=eq.${reservation.booking_type}&select=id,status`;
       const checkRes = await fetch(checkUrl, { headers });
       const checkData = await checkRes.json();
 
@@ -691,7 +692,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
         driver_arrived_time: new Date().toISOString(),
       };
 
-      const updateUrl = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${reservation.id}`; // Sin filtro de status en URL
+      const updateUrl = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?id=eq.${reservation.id}`; // Sin filtro de status en URL
       const updateRes = await fetch(updateUrl, {
         method: 'PATCH',
         headers: { ...headers, 'Prefer': 'return=representation' },

@@ -79,7 +79,7 @@ export function useDriverCancellationWatcher(showCancelModal: ShowCancelModal) {
       try {
         const sinceIso = new Date(Date.now() - RECENT_CANCEL_WINDOW_MS).toISOString();
         const { data, error } = await (supabase as any)
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('id, status, cancelled_by, reason, customer_name, updated_at')
           .eq('driver_id', driverId)
           .eq('status', 'CANCELLED')

@@ -235,7 +235,7 @@ const ReservationsScreen = () => {
       ].join(',');
 
       let url =
-        `${SUPABASE_URL}/rest/v1/bookings` +
+        `${SUPABASE_URL}/rest/v1/bookings_v2_mobile` +
         `?or=(${orFilter})` +
         `&status=in.(${statuses})` +
         `&order=booking_date.desc` +

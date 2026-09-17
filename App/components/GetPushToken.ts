@@ -32,6 +32,11 @@ export default async function GetPushToken() {
   if (Device.isDevice || allowEmulator) {
     try {
       const Notifications = await import('expo-notifications');
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('messages', {
+          name: 'Avisos generales', importance: Notifications.AndroidImportance.HIGH, sound: 'default',
+        });
+      }
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
       if (existingStatus !== 'granted') {
@@ -45,7 +50,7 @@ export default async function GetPushToken() {
       }
       const ref = { projectId: AppConfig.expo_project_id };
       token = (await Notifications.getExpoPushTokenAsync(ref)).data;
-      console.log('[GetPushToken] Token =', token);
+      console.log('[GetPushToken] Expo token obtained');
     } catch (err) {
       console.warn('GetPushToken: expo-notifications not available', err);
       return null;

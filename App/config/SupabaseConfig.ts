@@ -132,6 +132,46 @@ export const supabase: SupabaseClient<Database> = createClient<Database>(
   createSupabaseClientOptions()
 ); 
 
+// Booking subscriptions use v2; re-read the protected view to avoid leaking OTP in realtime.
+// This test branch never sends booking pushes through production Firebase.
+export const bookingV2LegacyFetch = async (url: string, _options?: unknown): Promise<Response> => {
+  if (!['sendNotification','sendMassNotification'].some(name => url === 'https://us-central1-treasupdate.cloudfunctions.net/' + name)) {
+    throw new Error('Unexpected legacy notification endpoint');
+  }
+  console.info('[booking_v2] Legacy push disabled; use the v2 notification outbox.');
+  return new Response(JSON.stringify({success:false,skipped:true,reason:'legacy_push_disabled_in_test'}), {
+    status: 200, headers: {'Content-Type':'application/json'},
+  });
+};
+export const bookingV2LegacyPost = async (url: string, body?: unknown) => ({
+  data: await (await bookingV2LegacyFetch(url, body)).json(),
+});
+const nativeChannel = supabase.channel.bind(supabase);
+(supabase as any).channel = (...args: any[]) => {
+  const channel: any = (nativeChannel as any)(...args);
+  const nativeOn = channel.on.bind(channel);
+  channel.on = (kind: string, filter: any, callback: any) => {
+    if (kind === 'postgres_changes' && filter?.schema === 'public' && filter?.table === 'bookings') {
+      const revisions = new Map<string, number>();
+      return nativeOn(kind, {...filter,schema:'booking_v2',table:'mobile_bookings'}, async (event: any) => {
+        const id = event.new?.id ?? event.old?.id;
+        const currentRevision = (revisions.get(id) ?? 0) + 1;
+        revisions.set(id, currentRevision);
+        if (event.eventType === 'DELETE') return callback(event);
+        const {data,error} = await (supabase as any).from('bookings_v2_mobile').select('*').eq('id',event.new.id).maybeSingle();
+        if (!error && data && currentRevision === revisions.get(id)) {
+          callback({...event,new:data});
+        }
+      });
+    }
+    if (kind === 'postgres_changes' && filter?.table === 'booking_tracking') {
+      return nativeOn(kind,{...filter,schema:'booking_v2'},callback);
+    }
+    return nativeOn(kind,filter,callback);
+  };
+  return channel;
+};
+
 // ==================== FLAG DE RECUPERACION DE CONTRASEÑA ====================
 // Mientras el usuario restablece su contraseña por deep link, exchangeCodeForSession
 // crea una sesión temporal que dispara SIGNED_IN. Sin este flag, el listener global

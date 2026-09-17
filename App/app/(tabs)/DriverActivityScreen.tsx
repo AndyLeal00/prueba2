@@ -145,7 +145,7 @@ const DriverActivityScreen = () => {
       // SOLO los viajes de ESTE conductor — antes traía COMPLETE de todos los
       // conductores del sistema sin filtrar, causando que se vieran/tocaran
       // viajes ajenos con precios distintos.
-      const completasUrl = `${SUPABASE_URL}/rest/v1/bookings?driver_id=eq.${encodeURIComponent(driverId)}&status=eq.COMPLETE&order=created_at.desc&limit=200`;
+      const completasUrl = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?driver_id=eq.${encodeURIComponent(driverId)}&status=eq.COMPLETE&order=created_at.desc&limit=200`;
       console.log('📡 [DriverActivity] Fetching completed trips for driver', driverId);
       const completasRes = await fetch(completasUrl, { headers });
       console.log('📡 [DriverActivity] Response Status:', completasRes.status);

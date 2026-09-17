@@ -91,7 +91,7 @@ const ActiveBookingScreen = () => {
           user?.usertype === "driver" ? "driver_status" : "customer_status";
         
         const { data, error } = await supabase
-          .from("bookings")
+          .from('bookings_v2_mobile' as any)
           .select("*")
           .eq(statusField, status)
           .order("created_at", { ascending: false })
@@ -121,7 +121,7 @@ const ActiveBookingScreen = () => {
 
         // Build query for multiple statuses - use in() for multiple values
         const { data, error } = await supabase
-          .from("bookings")
+          .from('bookings_v2_mobile' as any)
           .select("*")
           .in(statusField, statuses)
           .order("created_at", { ascending: false });

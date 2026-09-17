@@ -1,3 +1,4 @@
+import { bookingV2LegacyFetch } from '@/config/SupabaseConfig';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
@@ -38,7 +39,7 @@ const MAPBOX_TOKEN = getMapboxAccessToken();
 const sendPushNotification = async (token: string, title: string, body: string) => {
   if (!token) return;
   try {
-    await fetch('https://us-central1-treasupdate.cloudfunctions.net/sendNotification', {
+    await bookingV2LegacyFetch('https://us-central1-treasupdate.cloudfunctions.net/sendNotification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, title, body }),
@@ -334,11 +335,12 @@ const ReservationTripScreen = () => {
       if (cancelHandled) return;
       try {
         const { data, error } = await (supabase as any)
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('status, cancelled_by, reason')
           .eq('id', reservation.id)
           .single();
         if (error || !data) return;
+        setOtpVerified(data.otp_verified === true);
         if (data.status === 'CANCELLED') {
           handleCancellation(data.reason, data.cancelled_by);
         }
@@ -416,7 +418,7 @@ const ReservationTripScreen = () => {
     if (!reservation?.id) return;
     try {
       const { data, error } = await supabase
-        .from('booking_tracking')
+        .from('booking_tracking_v2' as any)
         .select('lat, lng, created_at')
         .eq('booking_id', reservation.id)
         .order('created_at', { ascending: true });
@@ -471,7 +473,7 @@ const ReservationTripScreen = () => {
     try {
       const headers = await getSupabaseAuthHeaders(true);
       const body: any = { status, ...extraFields };
-      const url = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${reservation.id}`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?id=eq.${reservation.id}`;
       const res = await fetch(url, {
         method: 'PATCH',
         headers: { ...headers, Prefer: 'return=representation' },
@@ -496,24 +498,11 @@ const ReservationTripScreen = () => {
       // 🔐 OTP de recogida: se genera al CREAR el booking (trigger DB
       // `trg_generate_booking_otp`) para que el admin lo vea en la web y se lo
       // pueda dar al cliente. Aquí solo lo LEEMOS, no lo regeneramos.
-      let otp = currentOtp;
-      if (!otp) {
-        const existing = await OtpService.getOtp(reservation.id);
-        otp = existing?.otp ? String(existing.otp).trim() : null;
-      }
-      // Fallback: reservas creadas ANTES de existir el trigger no tienen otp.
-      // En ese caso lo generamos y persistimos como antes (retrocompatibilidad).
-      if (!otp) {
-        otp = OtpService.generateOtp();
-        await OtpService.saveOtp(reservation.id, otp);
-        console.log('✅ OTP legacy generado y guardado:', otp);
-      }
-      setCurrentOtp(otp);
+      // The client/admin owns the code; the driver verifies it through the server.
 
       await updateBookingStatus('ARRIVED', {
         driver_arrived_time: new Date().toISOString(),
       });
-      console.log('✅ OTP de recogida en uso:', otp);
       
       setPhase('ARRIVED_AT_PICKUP');
       setWaitingForOtpTimer(true); // ⏱️ Mostrar estado de espera
@@ -627,7 +616,7 @@ const ReservationTripScreen = () => {
 
         // Si no está en params, cargar desde BD
         const { data, error } = await (supabase as any)
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('otp, otp_verified, otp_timer_started_at, status')
           .eq('id', reservation?.id)
           .single();
@@ -724,7 +713,7 @@ const ReservationTripScreen = () => {
       const fetchOtp = async () => {
         try {
           const { data, error } = await (supabase as any)
-            .from('bookings')
+            .from('bookings_v2_mobile' as any)
             .select('otp')
             .eq('id', reservation?.id)
             .single();
@@ -856,7 +845,7 @@ const ReservationTripScreen = () => {
 
       // Update vía REST directo (evita cuelgue del cliente supabase-js)
       const updateRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/bookings?id=eq.${reservation.id}`,
+        `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?id=eq.${reservation.id}`,
         {
           method: 'PATCH',
           headers: { ...headers, Prefer: 'return=minimal' },
@@ -875,7 +864,7 @@ const ReservationTripScreen = () => {
       if (customerId) {
         try {
           const pastRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/bookings?customer_id=eq.${customerId}&customer_rating=not.is.null&select=customer_rating`,
+            `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?customer_id=eq.${customerId}&customer_rating=not.is.null&select=customer_rating`,
             { method: 'GET', headers },
           );
           if (pastRes.ok) {
@@ -1315,7 +1304,13 @@ const ReservationTripScreen = () => {
                           justifyContent: 'center',
                           alignItems: 'center',
                         }}
-                        onPress={() => handleOTPMatch(String(enteredOtp).trim() === String(currentOtp).trim())}
+                        onPress={async () => {
+                          if (loading) return;
+                          setLoading(true);
+                          try { await handleOTPMatch(await OtpService.validateOtp(reservation.id, enteredOtp)); }
+                          catch (error: any) { showAlert('error', 'Código no verificado', error.message); }
+                          finally { setLoading(false); }
+                        }}
                         disabled={loading || enteredOtp.length === 0}
                       >
                         <Ionicons name="checkmark" size={20} color="#00204a" />

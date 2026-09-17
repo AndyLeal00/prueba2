@@ -183,7 +183,7 @@ export class BookingRealtimeService {
       const column = userType === 'customer' ? 'customer' : 'driver';
       
       const { data, error } = await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .select('*')
         .eq(column, userId)
         .in('status', ['NEW', 'ACCEPTED', 'STARTED', 'ARRIVED'])
@@ -212,7 +212,7 @@ export class BookingRealtimeService {
       console.log(`📝 [BookingRealtime] Actualizando reserva ${bookingId}...`, updates);
       
       const { data, error } = await supabase
-        .from('bookings')
+        .from('bookings_v2_mobile' as any)
         .update(updates)
         .eq('id', bookingId)
         .select()
@@ -244,7 +244,7 @@ export class BookingRealtimeService {
   ) {
     try {
       const { data, error } = await supabase
-        .from('booking_tracking')
+        .from('booking_tracking_v2' as any)
         .insert([{
           booking_id: bookingId,
           driver_id: driverId,

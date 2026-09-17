@@ -30,7 +30,7 @@ const OtpCountdownNotification: React.FC<OtpCountdownNotificationProps> = ({
     const fetchTimerState = async () => {
       try {
         const { data, error } = await (supabase as any)
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('otp_timer_started_at')
           .eq('id', bookingId)
           .single();

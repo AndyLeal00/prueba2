@@ -12,7 +12,7 @@ const insertTrackingPoint = async (
   driverId: string | undefined,
   driverLocation: { lat: number; lng: number },
 ) => {
-  const { error } = await supabase.from('booking_tracking' as any).insert({
+  const { error } = await supabase.from('booking_tracking_v2' as any).insert({
     booking_id: bookingId,
     driver_id: driverId || null,
     lat: driverLocation.lat,

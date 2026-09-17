@@ -1,3 +1,4 @@
+import { bookingV2LegacyFetch } from '@/config/SupabaseConfig';
 import React, {
   useEffect,
   useState,
@@ -676,7 +677,7 @@ const MapScreen = () => {
 
     // Carga inicial desde Supabase
     supabase
-      .from('bookings')
+      .from('bookings_v2_mobile' as any)
       .select('*')
       .eq('status', 'NEW')
       .then(({ data, error }) => {
@@ -913,7 +914,7 @@ const MapScreen = () => {
       .then(() => {
         // Enviar notificaci�n
        
-        fetch(
+        bookingV2LegacyFetch(
           "https://us-central1-treasupdate.cloudfunctions.net/sendMassNotification",
           {
             method: "POST",
@@ -1029,7 +1030,7 @@ const MapScreen = () => {
       const statuses = ['ACCEPTED', 'ARRIVED', 'STARTED', 'IN_PROGRESS', 'TRIP_STARTED']
         .map(s => `"${s}"`)
         .join(',');
-      const url = `${SUPABASE_URL}/rest/v1/bookings?driver_id=eq.${driverUsersId}&status=in.(${statuses})&order=created_at.desc&limit=1&select=id,status`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?driver_id=eq.${driverUsersId}&status=in.(${statuses})&order=created_at.desc&limit=1&select=id,status`;
       const resp = await fetch(url, { headers });
       if (!resp.ok) return;
       const rows = await resp.json();
@@ -1147,7 +1148,7 @@ const MapScreen = () => {
         ...user,
         location: user?.location || profile?.location || currentPosition,
       });
-      const url = `${SUPABASE_URL}/rest/v1/bookings?booking_type=eq.immediate&limit=1000&select=*&order=created_at.desc`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?booking_type=eq.immediate&limit=1000&select=*&order=created_at.desc`;
       const response = await fetch(url, { headers });
       const rows = response.ok ? await response.json() : [];
 
@@ -2064,7 +2065,7 @@ const MapScreen = () => {
     try {
       const headers = await getSupabaseAuthHeaders();
       const url =
-        `${SUPABASE_URL}/rest/v1/bookings` +
+        `${SUPABASE_URL}/rest/v1/bookings_v2_mobile` +
         `?status=eq.COMPLETE` +
         `&order=created_at.desc&limit=200`;
       console.log('[HOY] driverIdForBalance:', driverIdForBalance, '| profile.id:', profile?.id, '| user.id:', user?.id, '| user.auth_id:', user?.auth_id);
@@ -2142,7 +2143,7 @@ const MapScreen = () => {
       try {
         const statuses = ['ACCEPTED', 'REACHED', 'NEW', 'STARTED', 'ARRIVED'];
         const { data, error } = await supabase
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('id, booking_date, created_at')
           .eq('driver', user.id)
           .in('status', statuses);

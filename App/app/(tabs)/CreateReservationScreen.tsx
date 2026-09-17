@@ -710,7 +710,7 @@ const CreateReservationScreen = () => {
         prepaid: false,
         observations: observations || null,
       };
-      const resp = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/bookings_v2_mobile`, {
         method: 'POST',
         headers: { ...headers, Prefer: 'return=representation' },
         body: JSON.stringify(body),

@@ -87,14 +87,14 @@ const restoreActiveTripNotification = async (
   try {
     // Obtener detalles del viaje desde Supabase
     const { data: booking, error } = await supabase
-      .from('bookings')
-      .select('*, profiles!driver_id(first_name, last_name)')
+      .from('bookings_v2_mobile' as any)
+      .select('*')
       .eq('id', bookingId)
       .single();
 
     if (error) {
       console.warn('AppStateRestoration: Viaje no encontrado:', error);
-      await AsyncStorage.removeItem(ACTIVE_TRIP_STORAGE_KEY);
+      // A temporary network/API error must not erase the active trip reference.
       return;
     }
 

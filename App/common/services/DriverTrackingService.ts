@@ -15,7 +15,7 @@ export const getLatestTrackingPoint = async (
 ): Promise<DriverLocation | null> => {
   try {
     const { data, error } = await supabase
-      .from('booking_tracking')
+      .from('booking_tracking_v2' as any)
       .select('lat, lng, created_at')
       .eq('booking_id', bookingId)
       .order('created_at', { ascending: false })

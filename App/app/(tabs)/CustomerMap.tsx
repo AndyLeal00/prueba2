@@ -333,7 +333,7 @@ const CustomerMap = ({ navigation: propsNavigation }: Props) => {
         const compositeStatuses = statuses.map((status) => `${user.id}_${status}`);
 
         const { count, error } = await supabase
-          .from('bookings')
+          .from('bookings_v2_mobile' as any)
           .select('id', { count: 'exact', head: true })
           .eq('customer', user.id)
           .in('customer_status', compositeStatuses);

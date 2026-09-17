@@ -128,7 +128,7 @@ const DriverActiveReservationsScreen = () => {
       }
       // Las columnas driver/driver_id están espejadas; filtramos por driver_id.
       const statuses = ACTIVE_STATUSES.map((s) => `"${s}"`).join(',');
-      const url = `${SUPABASE_URL}/rest/v1/bookings?driver_id=eq.${encodeURIComponent(driverId)}&status=in.(${statuses})&order=booking_date.asc&select=*`;
+      const url = `${SUPABASE_URL}/rest/v1/bookings_v2_mobile?driver_id=eq.${encodeURIComponent(driverId)}&status=in.(${statuses})&order=booking_date.asc&select=*`;
       const res = await fetch(url, { headers });
       if (!res.ok) {
         console.warn('[RESERVAS ACTIVAS] Fetch status:', res.status, await res.text());
