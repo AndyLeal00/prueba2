@@ -1,31 +1,32 @@
 -- ============================================================
--- chat_messages — chat cliente <-> conductor por booking
--- Ajustado a bookings con: id, customer, driver, customer_id, driver_id (uuid)
--- Participante: auth.uid() OR users.id ligado por users.auth_id
+-- FIX: RLS chat_messages (auth.uid vs users.id) + FK sender_id
+-- Ejecutar en SQL Editor si ya creaste la tabla
 -- ============================================================
 
-create extension if not exists "pgcrypto";
+-- 1) sender_id: la app guarda users.id, no siempre auth.users.id
+alter table public.chat_messages
+  drop constraint if exists chat_messages_sender_id_fkey;
 
-create table if not exists public.chat_messages (
-  id uuid primary key default gen_random_uuid(),
-  booking_id uuid not null references public.bookings(id) on delete cascade,
-  sender_id uuid null references auth.users(id) on delete set null,
-  sender_role text not null check (sender_role in ('customer', 'driver', 'admin')),
-  sender_name text null,
-  message text not null check (char_length(trim(message)) > 0),
-  created_at timestamptz not null default now()
-);
+-- Opcional: amarrar a public.users
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'chat_messages_sender_id_users_fkey'
+  ) then
+    alter table public.chat_messages
+      add constraint chat_messages_sender_id_users_fkey
+      foreign key (sender_id) references public.users(id) on delete set null;
+  end if;
+exception when others then
+  -- Si falla el FK (datos huérfanos), dejamos sender_id sin FK.
+  raise notice 'FK a users omitido: %', sqlerrm;
+end $$;
 
-create index if not exists chat_messages_booking_id_created_at_idx
-  on public.chat_messages (booking_id, created_at asc);
-
-alter table public.chat_messages enable row level security;
-
--- Quitar policies viejas si existen (para poder recrear)
+-- 2) Recrear policies
 drop policy if exists "chat_messages_select_participants" on public.chat_messages;
 drop policy if exists "chat_messages_insert_participants" on public.chat_messages;
 
--- SELECT: auth.uid() directo O users.id donde auth_id = auth.uid()
 create policy "chat_messages_select_participants"
   on public.chat_messages
   for select
@@ -47,7 +48,6 @@ create policy "chat_messages_select_participants"
     )
   );
 
--- INSERT: mismo check de participante + sender_id válido
 create policy "chat_messages_insert_participants"
   on public.chat_messages
   for insert
@@ -79,6 +79,7 @@ create policy "chat_messages_insert_participants"
     )
   );
 
+-- 3) Realtime
 do $$
 begin
   if not exists (
@@ -91,3 +92,10 @@ begin
     alter publication supabase_realtime add table public.chat_messages;
   end if;
 end $$;
+
+-- Verificar policies
+select pol.polname
+from pg_policy pol
+join pg_class cls on cls.oid = pol.polrelid
+join pg_namespace nsp on nsp.oid = cls.relnamespace
+where nsp.nspname = 'public' and cls.relname = 'chat_messages';

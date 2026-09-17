@@ -187,6 +187,9 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
           'Hola, buenas noches.',
           'Estoy en camino.',
           'Llegaré en 5 minutos.',
+          '¿Tardas?',
+          '¡Confírmame por favor!',
+          'Ya estoy en el punto a tu espera!',
         ]
       : [
           'Hola, buenos días.',
@@ -196,6 +199,11 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
           'Hola, buenas noches.',
           'Te espero en la entrada.',
           '¿Cuánto tiempo falta?',
+          '¿Tardas?',
+          '¡Confírmame por favor!',
+          'En 5 minutos bajo!',
+          'Ya estoy en el punto a tu espera!',
+          'Por favor dame 5 minutos!',
         ];
 
   const renderItem = ({ item, index }: { item: ChatMessage; index: number }) => {
