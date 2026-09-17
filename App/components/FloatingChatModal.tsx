@@ -25,7 +25,7 @@ import {
   sendMessage as sendChatMessage,
 } from '@/common/services/chatService';
 
-const { height: SCREEN_H } = Dimensions.get('window');
+const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const SHEET_H = Math.min(SCREEN_H * 0.78, 640);
 const POLL_MS = 3000;
 
@@ -222,6 +222,8 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
 
     const prev = messages[index - 1];
     const showTail = !prev || prev.sender_role !== item.sender_role;
+    // Deja espacio para el avatar (28) + gap; evita que el texto se recorte.
+    const bubbleMaxW = Math.min(SCREEN_W * 0.78, SCREEN_W - 72);
 
     return (
       <View
@@ -231,21 +233,24 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
           showTail && { marginTop: 10 },
         ]}
       >
-        {!mine && !isAdmin && showTail ? (
-          otherPhoto ? (
-            <Image source={{ uri: otherPhoto }} style={styles.msgAvatar} />
+        {!mine && !isAdmin ? (
+          showTail ? (
+            otherPhoto ? (
+              <Image source={{ uri: otherPhoto }} style={styles.msgAvatar} />
+            ) : (
+              <View style={styles.msgAvatarFallback}>
+                <Ionicons name="person" size={12} color="#00E5FF" />
+              </View>
+            )
           ) : (
-            <View style={styles.msgAvatarFallback}>
-              <Ionicons name="person" size={12} color="#00E5FF" />
-            </View>
+            <View style={{ width: 28 }} />
           )
-        ) : (
-          <View style={{ width: 28 }} />
-        )}
+        ) : null}
 
         <View
           style={[
             styles.bubble,
+            { maxWidth: bubbleMaxW },
             mine && styles.bubbleMine,
             isAdmin && styles.bubbleAdmin,
             !mine && !isAdmin && styles.bubbleOther,
@@ -253,12 +258,16 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
             !mine && !isAdmin && showTail && styles.bubbleOtherTail,
           ]}
         >
-          <Text style={[styles.bubbleText, mine && styles.bubbleTextLight, isAdmin && styles.bubbleTextAdmin]}>
+          <Text
+            style={[styles.bubbleText, mine && styles.bubbleTextLight, isAdmin && styles.bubbleTextAdmin]}
+          >
             {item.message}
           </Text>
-          <Text style={[styles.bubbleMeta, mine && styles.bubbleMetaLight, isAdmin && styles.bubbleMetaAdmin]}>
-            {mine ? 'Tú' : isAdmin ? 'Admin' : item.sender_name || otherName} · {time}
-          </Text>
+          {!!time && (
+            <Text style={[styles.bubbleMeta, mine && styles.bubbleMetaLight, isAdmin && styles.bubbleMetaAdmin]}>
+              {time}
+            </Text>
+          )}
         </View>
       </View>
     );
@@ -575,6 +584,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginVertical: 2,
     gap: 6,
+    width: '100%',
+    paddingHorizontal: 2,
   },
   rowMine: { justifyContent: 'flex-end' },
   rowOther: { justifyContent: 'flex-start' },
@@ -595,10 +606,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,229,255,0.3)',
   },
   bubble: {
-    maxWidth: '76%',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
+    flexShrink: 1,
   },
   bubbleMine: {
     backgroundColor: '#00E5FF',
@@ -624,7 +635,7 @@ const styles = StyleSheet.create({
   bubbleText: {
     color: '#E8F1F5',
     fontSize: 14,
-    lineHeight: 19,
+    lineHeight: 20,
   },
   bubbleTextLight: {
     color: '#001824',
@@ -638,6 +649,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 10,
     color: 'rgba(255,255,255,0.4)',
+    alignSelf: 'flex-end',
   },
   bubbleMetaLight: {
     color: 'rgba(0,24,36,0.55)',
