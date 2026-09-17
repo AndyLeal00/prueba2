@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   Dimensions,
-  FlatList,
   Image,
   Keyboard,
-  Modal,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -26,8 +26,11 @@ import {
 } from '@/common/services/chatService';
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
-const SHEET_H = Math.min(SCREEN_H * 0.78, 640);
+const SHEET_H = Math.min(SCREEN_H * 0.72, 620);
 const POLL_MS = 3000;
+const BUBBLE_MAX_W = Math.floor(SCREEN_W * 0.75);
+
+const charLen = (s: string) => Array.from(String(s || '')).length;
 
 export type FloatingChatModalProps = {
   visible: boolean;
@@ -56,34 +59,60 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
   const [sending, setSending] = useState(false);
   const [text, setText] = useState('');
   const [keyboardH, setKeyboardH] = useState(0);
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<ScrollView>(null);
   const backdrop = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(SHEET_H + 40)).current;
+  // IMPORTANTE: con useNativeDriver, marginBottom no mueve la vista.
+  // El teclado se compensa solo con translateY.
+  const keyboardLift = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useMemo(
+    () => Animated.add(sheetY, keyboardLift),
+    [sheetY, keyboardLift]
+  );
 
-  // Sube el sheet por encima del teclado (iOS + Android; KAV dentro de Modal falla en Android).
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const onShow = (e: any) => {
       const h = Math.max(0, Number(e?.endCoordinates?.height) || 0);
       setKeyboardH(h);
+      Animated.timing(keyboardLift, {
+        toValue: -Math.max(h - Math.max(insets.bottom, 0), 0),
+        duration: Platform.OS === 'ios' ? Math.min(Number(e?.duration) || 250, 280) : 140,
+        useNativeDriver: true,
+      }).start();
     };
-    const onHide = () => setKeyboardH(0);
+    const onHide = () => {
+      setKeyboardH(0);
+      Animated.timing(keyboardLift, {
+        toValue: 0,
+        duration: 140,
+        useNativeDriver: true,
+      }).start();
+    };
     const subShow = Keyboard.addListener(showEvt, onShow);
     const subHide = Keyboard.addListener(hideEvt, onHide);
     return () => {
       subShow.remove();
       subHide.remove();
     };
-  }, []);
+  }, [keyboardLift, insets.bottom]);
 
   useEffect(() => {
-    if (!visible) setKeyboardH(0);
-  }, [visible]);
+    if (!visible) {
+      setKeyboardH(0);
+      keyboardLift.setValue(0);
+    }
+  }, [visible, keyboardLift]);
 
   const loadMessages = useCallback(async () => {
     if (!bookingId) return;
     const data = await fetchMessages(bookingId);
+    if (__DEV__) {
+      data.forEach((m) => {
+        console.log('[chat msg]', charLen(m.message), JSON.stringify(m.message));
+      });
+    }
     setMessages(data);
     setLoading(false);
     await markChatRead(bookingId, myRole);
@@ -222,9 +251,7 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
 
     const prev = messages[index - 1];
     const showTail = !prev || prev.sender_role !== item.sender_role;
-    // Ancho fijo en px (no %): evita que avatar+burbuja compriman el Text
-    // y recorten la 2.ª línea ("vas?", "espera!", "minutos!").
-    const bubbleMaxW = Math.floor(SCREEN_W * 0.72);
+    const fullText = String(item.message ?? '');
 
     return (
       <View
@@ -251,7 +278,8 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
         <View
           style={[
             styles.bubble,
-            { width: undefined, maxWidth: bubbleMaxW },
+            // Ancho fijo en recibidos: obliga a wrap de líneas completas
+            !mine && !isAdmin ? { width: BUBBLE_MAX_W } : { maxWidth: BUBBLE_MAX_W },
             mine && styles.bubbleMine,
             isAdmin && styles.bubbleAdmin,
             !mine && !isAdmin && styles.bubbleOther,
@@ -263,12 +291,11 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
             selectable
             style={[
               styles.bubbleText,
-              { maxWidth: bubbleMaxW - 24 },
               mine && styles.bubbleTextLight,
               isAdmin && styles.bubbleTextAdmin,
             ]}
           >
-            {String(item.message ?? '')}
+            {fullText}
           </Text>
           {!!time && (
             <Text style={[styles.bubbleMeta, mine && styles.bubbleMetaLight, isAdmin && styles.bubbleMetaAdmin]}>
@@ -280,51 +307,44 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
     );
   };
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={animateClose}
-    >
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={animateClose}>
-          <Animated.View
-            style={[
-              styles.backdrop,
-              {
-                opacity: backdrop.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 0.55],
-                }),
-              },
-            ]}
-          />
-        </Pressable>
+  if (!visible) return null;
 
+  return (
+    <View style={styles.overlay} pointerEvents="box-none">
+      <Pressable style={StyleSheet.absoluteFill} onPress={animateClose}>
+        <Animated.View
+          style={[
+            styles.backdrop,
+            {
+              opacity: backdrop.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.55],
+              }),
+            },
+          ]}
+        />
+      </Pressable>
+
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+        pointerEvents="box-none"
+      >
         <Animated.View
           style={[
             styles.sheetWrap,
             {
-              height: SHEET_H + (keyboardH > 0 ? 8 : Math.max(insets.bottom, 10)),
-              marginBottom: keyboardH > 0 ? Math.max(keyboardH - insets.bottom, 0) : 0,
-              transform: [{ translateY: sheetY }],
+              height: SHEET_H + Math.max(insets.bottom, 10),
+              transform: [{ translateY: sheetTranslateY }],
             },
           ]}
         >
-          <View
-            style={[
-              styles.sheet,
-              { paddingBottom: keyboardH > 0 ? 8 : Math.max(insets.bottom, 10) },
-            ]}
-          >
-            {/* Handle */}
+          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <View style={styles.handleRow}>
               <View style={styles.handle} />
             </View>
 
-            {/* Header Messenger-like */}
             <View style={styles.header}>
               <View style={styles.headerLeft}>
                 {otherPhoto ? (
@@ -358,17 +378,13 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Messages */}
             {loading ? (
               <View style={styles.loadingBox}>
                 <ActivityIndicator size="large" color="#00E5FF" />
               </View>
             ) : (
-              <FlatList
+              <ScrollView
                 ref={listRef}
-                data={messages}
-                keyExtractor={(item) => item.id}
-                renderItem={renderItem}
                 style={styles.list}
                 contentContainerStyle={[
                   styles.listContent,
@@ -376,13 +392,13 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
                 ]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator
-                removeClippedSubviews={false}
                 onContentSizeChange={() => {
                   if (messages.length > 0) {
                     listRef.current?.scrollToEnd({ animated: true });
                   }
                 }}
-                ListEmptyComponent={
+              >
+                {messages.length === 0 ? (
                   <View style={styles.empty}>
                     <View style={styles.emptyIcon}>
                       <Ionicons name="chatbubbles" size={28} color="#00E5FF" />
@@ -392,27 +408,32 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
                       Los mensajes de este viaje quedan guardados aquí.
                     </Text>
                   </View>
-                }
-              />
+                ) : (
+                  messages.map((item, index) => (
+                    <View key={item.id}>{renderItem({ item, index })}</View>
+                  ))
+                )}
+              </ScrollView>
             )}
 
-            {/* Quick replies — burbujas en filas (wrap) */}
-            <View style={styles.quickWrap}>
-              {quickReplies.map((msg) => (
-                <TouchableOpacity
-                  key={msg}
-                  style={styles.quickChip}
-                  onPress={() => send(msg)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.quickChipText} numberOfLines={1}>
-                    {msg}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {/* Ocultar chips con teclado abierto para dejar espacio al input */}
+            {keyboardH === 0 && (
+              <View style={styles.quickWrap}>
+                {quickReplies.map((msg) => (
+                  <TouchableOpacity
+                    key={msg}
+                    style={styles.quickChip}
+                    onPress={() => send(msg)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.quickChipText} numberOfLines={1}>
+                      {msg}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
-            {/* Composer */}
             <View style={styles.composer}>
               <TextInput
                 style={styles.input}
@@ -440,14 +461,20 @@ const FloatingChatModal: React.FC<FloatingChatModalProps> = ({
             </View>
           </View>
         </Animated.View>
-      </View>
-    </Modal>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1000,
+    elevation: 1000,
+    justifyContent: 'flex-end',
+  },
+  kav: {
+    width: '100%',
     justifyContent: 'flex-end',
   },
   backdrop: {
@@ -465,7 +492,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(0,229,255,0.28)',
-    overflow: 'visible',
+    overflow: 'hidden',
     shadowColor: '#00E5FF',
     shadowOpacity: 0.18,
     shadowRadius: 18,
@@ -593,7 +620,6 @@ const styles = StyleSheet.create({
     marginVertical: 3,
     gap: 8,
     width: '100%',
-    paddingHorizontal: 2,
   },
   rowMine: { justifyContent: 'flex-end' },
   rowOther: { justifyContent: 'flex-start' },
@@ -621,23 +647,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
-    flexGrow: 0,
-    flexShrink: 0,
   },
   bubbleMine: {
     backgroundColor: '#00E5FF',
     borderBottomRightRadius: 6,
-    alignSelf: 'flex-end',
   },
   bubbleMineTail: {
     borderBottomRightRadius: 4,
   },
   bubbleOther: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.12)',
     borderBottomLeftRadius: 6,
-    alignSelf: 'flex-start',
   },
   bubbleOtherTail: {
     borderBottomLeftRadius: 4,
