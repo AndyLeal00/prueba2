@@ -123,7 +123,7 @@ const ActionBtn = ({
       <Animated.View style={[s.serviceCard, { transform: [{ scale }, { translateY: lift }] }]}>
         <View style={s.serviceCardContent}>
           <View style={s.serviceIconWrap}>
-            <Ionicons name={icon} size={22} color="#00E5FF" />
+            <Ionicons name={icon} size={18} color="#00E5FF" />
           </View>
           <Text style={s.serviceTitle} adjustsFontSizeToFit minimumFontScale={0.85} numberOfLines={2}>
             {label}
@@ -577,50 +577,50 @@ const s = StyleSheet.create({
     marginBottom: 12,
   },
   serviceCard: {
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: 'hidden',
-    minHeight: 132,
+    minHeight: 108,
     borderWidth: 1,
     borderColor: 'rgba(0,229,255,0.2)',
     backgroundColor: 'rgba(10,46,61,0.94)',
   },
   serviceCardContent: {
-    padding: 14,
+    padding: 10,
   },
   serviceIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: 'rgba(0,229,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   serviceTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#ffffff',
-    lineHeight: 18,
+    lineHeight: 16,
     letterSpacing: -0.2,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   serviceSub: {
-    fontSize: 11,
+    fontSize: 10,
     color: 'rgba(255,255,255,0.65)',
-    lineHeight: 15,
-    marginBottom: 10,
+    lineHeight: 13,
+    marginBottom: 8,
   },
   serviceCta: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     backgroundColor: '#00E5FF',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
   },
   serviceCtaTxt: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#051A26',
     marginRight: 2,

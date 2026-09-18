@@ -180,30 +180,42 @@ export const addActualsToBooking = async (
 
     // Leer tarifas desde Supabase car_types (fuente única de verdad)
     let rates: any = {};
-    const { data: carTypeRows } = await supabase
-      .from('car_types')
-      .select('*')
-      .eq('name', booking.carType)
-      .eq('is_active', true)
-      .limit(1);
+    const carTypeName =
+      booking.carType ||
+      booking.car_type ||
+      booking.category ||
+      booking.vehicle_type ||
+      null;
+    if (carTypeName) {
+      const { data: carTypeRows } = await supabase
+        .from('car_types')
+        .select('*')
+        .eq('name', carTypeName)
+        .eq('is_active', true)
+        .limit(1);
 
-    if (carTypeRows?.length) {
-      const ct = carTypeRows[0];
-      rates = {
-        rate_per_unit_distance:     parseFloat(ct.price_per_km)       || 0,
-        rate_per_unit_distance_inter: parseFloat(ct.price_per_km_inter) || 0,
-        rate_per_hour:              parseFloat(ct.rate_per_hour)       || 0,
-        rate_per_hour_inter:        parseFloat(ct.rate_per_hour_inter) || 0,
-        valor_hora:                 parseFloat(ct.valor_hora)          || 0,
-        base_fare:                  parseFloat(ct.base_price)          || 0,
-        base_fare_inter:            parseFloat(ct.base_price_inter)    || 0,
-        min_fare:                   parseFloat(ct.min_fare)            || 0,
-        min_fare_inter:             parseFloat(ct.min_fare_inter)      || 0,
-        delta_aeropuerto:           parseFloat(ct.delta_aeropuerto)    || 0,
-        delta_aeropuerto_prog:      parseFloat(ct.delta_aeropuerto_prog) || 0,
-        convenience_fees:           parseFloat(ct.convenience_fee)     || 0,
-        convenience_fee_type:       ct.convenience_fee_type            || 'flat',
-      };
+      if (carTypeRows?.length) {
+        const ct: any = carTypeRows[0];
+        rates = {
+          rate_per_unit_distance:     parseFloat(ct.price_per_km)       || 0,
+          rate_per_unit_distance_inter: parseFloat(ct.price_per_km_inter) || 0,
+          rate_per_hour:              parseFloat(ct.rate_per_hour)       || 0,
+          rate_per_hour_inter:        parseFloat(ct.rate_per_hour_inter) || 0,
+          valor_hora:                 parseFloat(ct.valor_hora)          || 0,
+          base_fare:                  parseFloat(ct.base_price)          || 0,
+          base_fare_inter:            parseFloat(ct.base_price_inter)    || 0,
+          min_fare:                   parseFloat(ct.min_fare)            || 0,
+          min_fare_inter:             parseFloat(ct.min_fare_inter)      || 0,
+          delta_aeropuerto:           parseFloat(ct.delta_aeropuerto)    || 0,
+          delta_aeropuerto_prog:      parseFloat(ct.delta_aeropuerto_prog) || 0,
+          convenience_fees:           parseFloat(ct.convenience_fee)     || 0,
+          convenience_fee_type:       ct.convenience_fee_type            || 'flat',
+        };
+      } else {
+        console.warn('[addActualsToBooking] car_types no encontrado para:', carTypeName);
+      }
+    } else {
+      console.warn('[addActualsToBooking] booking sin car_type/carType');
     }
 
     // Reconciliación con el respaldo local (buffer en el teléfono, ver

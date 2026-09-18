@@ -15,9 +15,11 @@ import {
   activeTripTitle,
   isImmediateBookingType,
   isReservationBookingType,
+  isWaitingAcceptanceStatus,
   type ActiveTripBannerBooking,
 } from '@/hooks/useActiveTripBanner';
 import TripProgressLoader from '@/components/TripProgressLoader';
+import WaitingAcceptanceLoader from '@/components/WaitingAcceptanceLoader';
 
 const ACCENT = '#00E5FF';
 const ACTIVE_GREEN = '#00E676';
@@ -135,6 +137,7 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
   }, [booking, isDriver, stackNavigation]);
 
   const statusTitle = activeTripTitle(booking);
+  const isWaiting = !isDriver && isWaitingAcceptanceStatus(booking.status);
 
   return (
     <TouchableOpacity
@@ -143,6 +146,7 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
         isProfile && styles.cardProfile,
         isList && styles.cardList,
         isDriverGo && styles.cardDriverGo,
+        isWaiting && styles.cardWaiting,
       ]}
       onPress={openTrip}
       activeOpacity={0.88}
@@ -150,7 +154,9 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
       accessibilityLabel={`${statusTitle}. Abrir detalle del viaje`}
     >
       <View style={styles.topRow}>
-        {photoUri ? (
+        {isWaiting ? (
+          <WaitingAcceptanceLoader />
+        ) : photoUri ? (
           <Image source={{ uri: photoUri }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarFallback}>
@@ -159,15 +165,21 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
         )}
         <View style={styles.topMeta}>
           <View style={styles.statusRow}>
-            <View style={styles.greenDot} />
+            <View style={[styles.greenDot, isWaiting && styles.waitingDot]} />
             <Text {...FIXED_TEXT_PROPS} style={styles.title} numberOfLines={1}>
               {statusTitle}
             </Text>
           </View>
-          <Text {...FIXED_TEXT_PROPS} style={styles.personName} numberOfLines={1}>
-            {counterpartName}
-          </Text>
-          {whenLabel ? (
+          {!isWaiting ? (
+            <Text {...FIXED_TEXT_PROPS} style={styles.personName} numberOfLines={1}>
+              {counterpartName}
+            </Text>
+          ) : (
+            <Text {...FIXED_TEXT_PROPS} style={styles.waitingHint} numberOfLines={1}>
+              Buscando conductor cercano…
+            </Text>
+          )}
+          {whenLabel && !isWaiting ? (
             <Text {...FIXED_TEXT_PROPS} style={styles.whenTxt} numberOfLines={1}>
               {whenLabel}
             </Text>
@@ -191,11 +203,13 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
         </View>
       </View>
 
-      <TripProgressLoader
-        booking={booking}
-        compact={isCompact}
-        role={isDriver ? 'driver' : 'customer'}
-      />
+      {!isWaiting ? (
+        <TripProgressLoader
+          booking={booking}
+          compact={isCompact}
+          role={isDriver ? 'driver' : 'customer'}
+        />
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -401,6 +415,9 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: ACTIVE_GREEN,
   },
+  waitingDot: {
+    backgroundColor: ACCENT,
+  },
   title: {
     flex: 1,
     color: 'rgba(255,255,255,0.78)',
@@ -428,11 +445,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  waitingHint: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   whenTxt: {
     color: ACCENT,
     fontSize: 10,
     fontWeight: '600',
     marginTop: 1,
+  },
+  cardWaiting: {
+    borderColor: 'rgba(0,229,255,0.45)',
   },
   routeBlock: {
     gap: 3,

@@ -1000,7 +1000,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                 <Image source={{ uri: photo }} style={s.avatarImg} />
               ) : (
                 <View style={s.avatarFallback}>
-                  <Ionicons name="person" size={16} color="#00E5FF" />
+                  <Ionicons name="person" size={14} color="#00E5FF" />
                 </View>
               )}
               <View style={s.clientMeta}>
@@ -1186,6 +1186,13 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
           >
             Reservas
           </Text>
+          {reservations.length > 0 ? (
+            <View style={[s.tabBadge, reservations.length > 99 && s.tabBadgeWide]}>
+              <Text {...FIXED_TEXT_PROPS} style={s.tabBadgeTxt} numberOfLines={1}>
+                {reservations.length}
+              </Text>
+            </View>
+          ) : null}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1205,6 +1212,13 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
           >
             Inmediatos
           </Text>
+          {immediateServices.length > 0 ? (
+            <View style={[s.tabBadge, immediateServices.length > 99 && s.tabBadgeWide]}>
+              <Text {...FIXED_TEXT_PROPS} style={s.tabBadgeTxt} numberOfLines={1}>
+                {immediateServices.length}
+              </Text>
+            </View>
+          ) : null}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1532,7 +1546,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                 onPress={closeServiceDetail}
                 activeOpacity={0.85}
               >
-                <Text style={s.soltarBtnTxt}>Soltar</Text>
+                <Text style={s.soltarBtnTxt}>Rechazar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.acceptBtnModal, accepting === detailItem?.id && { opacity: 0.6 }]}
@@ -1678,30 +1692,31 @@ const s = StyleSheet.create({
   emptySub: { fontSize: 13, color: 'rgba(255,255,255,0.4)', textAlign: 'center', paddingHorizontal: 40 },
   emptySubPinned: { fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center', paddingHorizontal: 20 },
   card: {
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 8,
     backgroundColor: 'rgba(10,46,61,0.72)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(0,229,255,0.18)',
   },
   cardTop: {
     flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 10,
+    alignItems: 'center',
+    gap: 8,
   },
   cardMain: { flex: 1, minWidth: 0 },
-  clientRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  clientRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 },
   avatarImg: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: 'rgba(0,229,255,0.12)',
   },
   avatarFallback: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,229,255,0.12)',
@@ -1709,55 +1724,55 @@ const s = StyleSheet.create({
     borderColor: 'rgba(0,229,255,0.25)',
   },
   clientMeta: { flex: 1, minWidth: 0 },
-  clientName: { fontSize: 13, fontWeight: '700', color: '#FFF' },
-  tripTypeTxt: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 1 },
-  routeBlock: { marginBottom: 8, paddingLeft: 2 },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  clientName: { fontSize: 12, fontWeight: '700', color: '#FFF', lineHeight: 15 },
+  tripTypeTxt: { fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 0 },
+  routeBlock: { marginBottom: 5, paddingLeft: 1, gap: 2 },
+  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dotStart: {
-    width: 8, height: 8, borderRadius: 4,
+    width: 6, height: 6, borderRadius: 3,
     backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#00E5FF',
   },
   dotEnd: {
-    width: 8, height: 8, borderRadius: 4,
+    width: 6, height: 6, borderRadius: 3,
     backgroundColor: '#E91E63', borderWidth: 1.5, borderColor: '#00E5FF',
   },
-  routeLine: { width: 1, height: 10, backgroundColor: 'rgba(255,255,255,0.15)', marginLeft: 3.5 },
+  routeLine: { width: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.15)', marginLeft: 2.5 },
   routeLineTall: { width: 1, height: 14, backgroundColor: 'rgba(255,255,255,0.15)', marginLeft: 3.5, marginVertical: 2 },
-  routeAddr: { flex: 1, fontSize: 11, color: 'rgba(255,255,255,0.72)' },
+  routeAddr: { flex: 1, fontSize: 10, color: 'rgba(255,255,255,0.72)', lineHeight: 13 },
   metricsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 5,
   },
   pricePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 999,
     backgroundColor: 'rgba(0,229,255,0.12)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(0,229,255,0.35)',
   },
-  pricePillTxt: { fontSize: 10, fontWeight: '700', color: '#00E5FF' },
-  pricePillSep: { fontSize: 10, fontWeight: '600', color: 'rgba(0,229,255,0.55)' },
-  metricTxt: { fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
-  metricDot: { fontSize: 10, color: 'rgba(255,255,255,0.3)' },
+  pricePillTxt: { fontSize: 9, fontWeight: '700', color: '#00E5FF' },
+  pricePillSep: { fontSize: 9, fontWeight: '600', color: 'rgba(0,229,255,0.55)' },
+  metricTxt: { fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
+  metricDot: { fontSize: 9, color: 'rgba(255,255,255,0.3)' },
   verBtn: {
     alignSelf: 'center',
-    minWidth: 52,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    minWidth: 46,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: 'rgba(0,229,255,0.14)',
     borderWidth: 1,
     borderColor: 'rgba(0,229,255,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  verBtnTxt: { fontSize: 12, fontWeight: '800', color: '#00E5FF' },
+  verBtnTxt: { fontSize: 11, fontWeight: '800', color: '#00E5FF' },
   acceptTxt: { fontSize: 13, fontWeight: '700', color: '#051A26' },
   obsBlock: {
     marginTop: 10, marginBottom: 4, padding: 10, borderRadius: 12,
@@ -1917,6 +1932,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     minWidth: 0,
+    position: 'relative',
+    overflow: 'visible',
   },
   tabActive: {
     backgroundColor: 'rgba(0,229,255,0.12)',
@@ -1930,4 +1947,34 @@ const s = StyleSheet.create({
   },
   tabTxtEmbedded: { fontSize: 10, flexShrink: 1 },
   tabTxtActive: { color: '#00E5FF', fontWeight: '700' },
+  tabBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#00E676',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#051A26',
+    zIndex: 2,
+  },
+  tabBadgeWide: {
+    minWidth: 26,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+  },
+  tabBadgeTxt: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 12,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1.5,
+  },
 });

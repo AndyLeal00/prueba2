@@ -25,6 +25,19 @@ export type ActiveTripBannerBooking = {
 };
 
 const ACTIVE_STATUSES = ['ACCEPTED', 'ARRIVED', 'STARTED', 'IN_PROGRESS', 'TRIP_STARTED'];
+/** Cliente esperando que un conductor acepte (aún sin viaje en curso). */
+const WAITING_STATUSES = ['PENDING', 'NEW'];
+
+export function isWaitingAcceptanceStatus(status?: string): boolean {
+  return WAITING_STATUSES.includes(String(status || '').toUpperCase());
+}
+
+export function isBannerBookingStatus(status?: string, isDriver = false): boolean {
+  if (isActiveTripStatus(status)) return true;
+  // Solo el cliente ve banner en PENDING/NEW
+  if (!isDriver && isWaitingAcceptanceStatus(status)) return true;
+  return false;
+}
 
 export function isImmediateBookingType(type?: string | null): boolean {
   const t = String(type || '').trim().toLowerCase();
@@ -36,9 +49,12 @@ export function isReservationBookingType(type?: string | null): boolean {
   return t === 'reservation' || t === 'scheduled' || t === 'book_later';
 }
 
-/** Título del banner según tipo de servicio. */
+/** Título del banner según tipo / fase. */
 export function activeTripTitle(booking?: ActiveTripBannerBooking | null): string {
   if (!booking) return 'Viaje en curso';
+  if (isWaitingAcceptanceStatus(booking.status)) {
+    return 'Esperando aceptación de viaje';
+  }
   if (isReservationBookingType(booking.booking_type as string)) {
     return 'Viaje en curso de reserva';
   }
@@ -152,7 +168,10 @@ export function useActiveTripBanner() {
         return;
       }
 
-      const statuses = ACTIVE_STATUSES.map((s) => `"${s}"`).join(',');
+      const statusList = isDriver
+        ? ACTIVE_STATUSES
+        : [...ACTIVE_STATUSES, ...WAITING_STATUSES];
+      const statuses = statusList.map((s) => `"${s}"`).join(',');
       const filter = isDriver
         ? `driver_id=eq.${uid}`
         : `customer=eq.${uid}`;
@@ -170,11 +189,16 @@ export function useActiveTripBanner() {
 
       const rows = await resp.json();
       const list = (Array.isArray(rows) ? rows : []).filter(
-        (row: any) => row?.id && isActiveTripStatus(row.status),
+        (row: any) => row?.id && isBannerBookingStatus(row.status, isDriver),
       ) as ActiveTripBannerBooking[];
 
       const enriched: ActiveTripBannerBooking[] = [];
       for (const row of list) {
+        // En espera de aceptación aún no hay conductor: no resolvemos foto
+        if (isWaitingAcceptanceStatus(row.status)) {
+          enriched.push({ ...row, counterpart_photo: null });
+          continue;
+        }
         const counterpartId = isDriver
           ? row.customer || row.customer_id
           : row.driver_id || row.driver;
@@ -229,7 +253,7 @@ export function useActiveTripBanner() {
           const updated = payload.new as ActiveTripBannerBooking | null;
           if (!updated?.id) return;
           setBookings((prev) => {
-            if (!isActiveTripStatus(updated.status)) {
+            if (!isBannerBookingStatus(updated.status, isDriver)) {
               return prev.filter((b) => b.id !== updated.id);
             }
             return prev.map((b) =>
@@ -250,7 +274,7 @@ export function useActiveTripBanner() {
         // ignore
       }
     };
-  }, [bookingIdsKey]);
+  }, [bookingIdsKey, isDriver]);
 
   const booking = bookings[0] ?? null;
 

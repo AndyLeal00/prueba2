@@ -64,14 +64,14 @@ export const FareCalculator = (
     isIntermunicipal && inter != null ? inter : urban;
 
   const ratePerUnitDistance = Math.round(
-    parseFloat(pick(rateDetails.rate_per_unit_distance, rateDetails.rate_per_unit_distance_inter))
+    parseFloat(pick(rateDetails?.rate_per_unit_distance, rateDetails?.rate_per_unit_distance_inter) || 0)
   );
 
   // Precio por minuto: preferir rate_per_hour; si no, valor_hora/60.
   const ratePerHourRaw = parseFloat(
-    pick(rateDetails.rate_per_hour, rateDetails.rate_per_hour_inter) || 0
+    pick(rateDetails?.rate_per_hour, rateDetails?.rate_per_hour_inter) || 0
   );
-  const valorHora = parseFloat(rateDetails.valor_hora || 0);
+  const valorHora = parseFloat(rateDetails?.valor_hora || 0);
   let ratePerMinute: number;
   if (ratePerHourRaw > 0) {
     ratePerMinute = ratePerHourRaw;
@@ -83,20 +83,20 @@ export const FareCalculator = (
   }
 
   const baseFare = Math.round(
-    parseFloat(pick(rateDetails.base_fare, rateDetails.base_fare_inter) || 0)
+    parseFloat(pick(rateDetails?.base_fare, rateDetails?.base_fare_inter) || 0)
   );
   const minFare = Math.round(
-    parseFloat(pick(rateDetails.min_fare, rateDetails.min_fare_inter) || 0)
+    parseFloat(pick(rateDetails?.min_fare, rateDetails?.min_fare_inter) || 0)
   );
-  const convenienceFees = Math.round(parseFloat(rateDetails.convenience_fees || 0));
+  const convenienceFees = Math.round(parseFloat(rateDetails?.convenience_fees || 0));
 
-  const deltaAeropuerto = resolveDelta(rateDetails.delta_aeropuerto, DELTA_AEROPUERTO);
-  const deltaProgramado = resolveDelta(rateDetails.delta_aeropuerto_prog, DELTA_PROGRAMADO);
+  const deltaAeropuerto = resolveDelta(rateDetails?.delta_aeropuerto, DELTA_AEROPUERTO);
+  const deltaProgramado = resolveDelta(rateDetails?.delta_aeropuerto_prog, DELTA_PROGRAMADO);
 
   if (minFare <= 0) {
     console.warn(
       '[FareCalculator] min_fare=0 o ausente para categoría',
-      rateDetails.id ?? rateDetails.name
+      rateDetails?.id ?? rateDetails?.name
     );
   }
 
@@ -104,7 +104,7 @@ export const FareCalculator = (
     isNaN(distance) || isNaN(time) || isNaN(ratePerUnitDistance) ||
     isNaN(ratePerMinute) || isNaN(baseFare) || isNaN(minFare) || isNaN(convenienceFees)
   ) {
-    console.error('Invalid numeric value in FareCalculator:', {
+    console.warn('[FareCalculator] valores inválidos (se usa 0 / piso cotizado):', {
       distance, time, ratePerUnitDistance, ratePerMinute, baseFare, minFare, convenienceFees,
     });
     return { totalCost: 0, grandTotal: 0, clientTotal: 0, convenience_fees: 0 };
@@ -133,7 +133,7 @@ export const FareCalculator = (
   const clientTotal = maxFromMinConductor(totalConductor);
 
   let convenienceFee = 0;
-  if (rateDetails.convenience_fee_type === 'flat') {
+  if (rateDetails?.convenience_fee_type === 'flat') {
     convenienceFee = convenienceFees;
   } else {
     convenienceFee = Math.round((totalConductor * convenienceFees) / 100);
