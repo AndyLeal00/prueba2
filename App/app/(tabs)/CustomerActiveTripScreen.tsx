@@ -509,7 +509,21 @@ const CustomerActiveTripScreen = () => {
   const trackingActive =
     booking?.status === 'ACCEPTED' ||
     booking?.status === 'ARRIVED' ||
-    booking?.status === 'STARTED';
+    booking?.status === 'STARTED' ||
+    booking?.status === 'IN_PROGRESS' ||
+    booking?.status === 'TRIP_STARTED';
+
+  const isTripToDrop =
+    booking?.status === 'STARTED' ||
+    booking?.status === 'IN_PROGRESS' ||
+    booking?.status === 'TRIP_STARTED';
+
+  const showLiveMap =
+    (booking?.status === 'ACCEPTED' ||
+      booking?.status === 'ARRIVED' ||
+      isTripToDrop) &&
+    booking?.pickup_lat != null &&
+    booking?.pickup_lng != null;
 
   const { driverPosition } = useBookingDriverPosition(
     trackingActive ? booking?.id : null
@@ -554,32 +568,54 @@ const CustomerActiveTripScreen = () => {
     prevDriverPosRef.current = { lat: driverLocation.latitude, lng: driverLocation.longitude };
   }, [driverLocation?.latitude, driverLocation?.longitude]);
 
-  // 🗺️ Mapbox Directions: refresca cada 25 s. Destino = pickup en ACCEPTED,
-  // drop en STARTED. En ARRIVED no hay ruta (el conductor está en el punto).
-  // Así el polyline también acompaña al cliente durante el viaje, no solo
-  // mientras espera al conductor.
+  // 🗺️ Mapbox Directions:
+  // - ACCEPTED: conductor → pickup
+  // - STARTED / IN_PROGRESS / TRIP_STARTED: pickup → drop (igual que el conductor)
   useEffect(() => {
-    if (!driverLocation) return;
     if (!MAPBOX_ACCESS_TOKEN) return;
 
     const status = booking?.status;
     const isAccepted = status === 'ACCEPTED';
-    const isStarted = status === 'STARTED';
-    if (!isAccepted && !isStarted) {
-      // ARRIVED u otros estados no necesitan línea — limpia la geometría previa.
+    const toDrop =
+      status === 'STARTED' ||
+      status === 'IN_PROGRESS' ||
+      status === 'TRIP_STARTED';
+
+    if (!isAccepted && !toDrop) {
       setRouteToPickup(null);
       return;
     }
 
-    const targetLat = Number(isStarted ? booking?.drop_lat : booking?.pickup_lat);
-    const targetLng = Number(isStarted ? booking?.drop_lng : booking?.pickup_lng);
-    if (isNaN(targetLat) || isNaN(targetLng)) return;
+    const pickupLat = Number(booking?.pickup_lat);
+    const pickupLng = Number(booking?.pickup_lng);
+    const dropLat = Number(booking?.drop_lat);
+    const dropLng = Number(booking?.drop_lng);
+
+    let originLng: number;
+    let originLat: number;
+    let destLng: number;
+    let destLat: number;
+
+    if (toDrop) {
+      if (isNaN(pickupLat) || isNaN(pickupLng) || isNaN(dropLat) || isNaN(dropLng)) return;
+      originLng = pickupLng;
+      originLat = pickupLat;
+      destLng = dropLng;
+      destLat = dropLat;
+    } else {
+      if (!driverLocation) return;
+      if (isNaN(pickupLat) || isNaN(pickupLng)) return;
+      originLng = driverLocation.longitude;
+      originLat = driverLocation.latitude;
+      destLng = pickupLng;
+      destLat = pickupLat;
+    }
 
     let cancelled = false;
     const fetchRoute = async () => {
       try {
-        const origin = `${driverLocation.longitude},${driverLocation.latitude}`;
-        const dest = `${targetLng},${targetLat}`;
+        const origin = `${originLng},${originLat}`;
+        const dest = `${destLng},${destLat}`;
         const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${origin};${dest}?geometries=geojson&overview=full&access_token=${MAPBOX_ACCESS_TOKEN}`;
         const res = await axios.get(url);
         if (cancelled) return;
@@ -593,11 +629,10 @@ const CustomerActiveTripScreen = () => {
         setEtaEstado('NORMAL');
       } catch (e: any) {
         console.error('Mapbox Directions error:', e?.response?.data || e?.message);
-        // Haversine fallback: si la API falla el cliente igual ve distancia y ETA
-        if (!cancelled && driverLocation) {
-          const linearKm = haversineKm(
-            driverLocation.latitude, driverLocation.longitude, targetLat, targetLng
-          );
+        if (!cancelled) {
+          const fromLat = toDrop ? pickupLat : (driverLocation?.latitude ?? pickupLat);
+          const fromLng = toDrop ? pickupLng : (driverLocation?.longitude ?? pickupLng);
+          const linearKm = haversineKm(fromLat, fromLng, destLat, destLng);
           const { distanciaTexto, etaTexto, estado } = formatDistanceAndEta(linearKm);
           setEstimatedTime(etaTexto);
           setEstimatedDistance(distanciaTexto);
@@ -607,7 +642,7 @@ const CustomerActiveTripScreen = () => {
     };
 
     fetchRoute();
-    const id = setInterval(fetchRoute, 25000);
+    const id = setInterval(fetchRoute, toDrop ? 60000 : 25000);
     return () => { cancelled = true; clearInterval(id); };
   }, [
     driverLocation,
@@ -617,13 +652,15 @@ const CustomerActiveTripScreen = () => {
     MAPBOX_ACCESS_TOKEN,
   ]);
 
-  // 🗺️ Fit camera a driver + target activo (pickup en ACCEPTED, drop en STARTED).
-  // Throttled para no llamar fitBounds en cada frame del tween (~42×/update).
+  // 🗺️ Fit camera a driver + target activo (pickup en ACCEPTED, drop en viaje).
   useEffect(() => {
     if (!animatedCoords) return;
-    const isStarted = booking?.status === 'STARTED';
-    const targetLat = Number(isStarted ? booking?.drop_lat : booking?.pickup_lat);
-    const targetLng = Number(isStarted ? booking?.drop_lng : booking?.pickup_lng);
+    const toDrop =
+      booking?.status === 'STARTED' ||
+      booking?.status === 'IN_PROGRESS' ||
+      booking?.status === 'TRIP_STARTED';
+    const targetLat = Number(toDrop ? booking?.drop_lat : booking?.pickup_lat);
+    const targetLng = Number(toDrop ? booking?.drop_lng : booking?.pickup_lng);
     if (isNaN(targetLat) || isNaN(targetLng)) return;
 
     if (!shouldRefitCamera(lastCameraFitRef.current, animatedCoords)) return;
@@ -638,13 +675,14 @@ const CustomerActiveTripScreen = () => {
   ]);
 
   // 🗺️ Fit fullscreen camera when opened or driver moves.
-  // The 400 ms setTimeout acts as a debounce: if animatedCoords keeps changing
-  // (tween in progress), the timer resets each time and only fires once it settles.
   useEffect(() => {
     if (!mapFullscreen || !fullscreenCameraRef.current) return;
-    const isStarted = booking?.status === 'STARTED';
-    const targetLat = Number(isStarted ? booking?.drop_lat : booking?.pickup_lat);
-    const targetLng = Number(isStarted ? booking?.drop_lng : booking?.pickup_lng);
+    const toDrop =
+      booking?.status === 'STARTED' ||
+      booking?.status === 'IN_PROGRESS' ||
+      booking?.status === 'TRIP_STARTED';
+    const targetLat = Number(toDrop ? booking?.drop_lat : booking?.pickup_lat);
+    const targetLng = Number(toDrop ? booking?.drop_lng : booking?.pickup_lng);
     if (isNaN(targetLat) || isNaN(targetLng)) return;
     const timer = setTimeout(() => {
       fitPickupAndDriver(
@@ -737,7 +775,7 @@ const CustomerActiveTripScreen = () => {
       const startTime = new Date(booking.otp_timer_started_at).getTime();
       const now = new Date().getTime();
       const elapsed = (now - startTime) / 1000;
-      const remaining = Math.max(0, 180 - elapsed);
+      const remaining = Math.min(180, Math.max(0, 180 - elapsed));
       
       console.log(`⏰ [COUNTDOWN] elapsed: ${elapsed.toFixed(1)}s, remaining: ${remaining.toFixed(1)}s`);
       setCountdown(Math.ceil(remaining));
@@ -873,9 +911,7 @@ const CustomerActiveTripScreen = () => {
         }
       >
         {/* 🗺️ Mapa con seguimiento en vivo del conductor */}
-        {(booking?.status === 'ACCEPTED' || booking?.status === 'ARRIVED' || booking?.status === 'STARTED')
-          && booking?.pickup_lat != null
-          && booking?.pickup_lng != null && (
+        {showLiveMap && (
           <View style={s.mapWrapper}>
             <Mapbox.MapView
               style={StyleSheet.absoluteFillObject}
@@ -900,33 +936,35 @@ const CustomerActiveTripScreen = () => {
                 </View>
               </Mapbox.PointAnnotation>
 
-              {/* Halo del punto de recogida (punta de la ruta) */}
+              {/* Halo: pickup antes del viaje; destino cuando el viaje está en curso */}
               <Mapbox.ShapeSource
-                id="cat-pickup-halo"
+                id="cat-active-halo"
                 shape={{
                   type: 'Feature',
                   properties: {},
                   geometry: {
                     type: 'Point',
-                    coordinates: [Number(booking.pickup_lng), Number(booking.pickup_lat)],
+                    coordinates: isTripToDrop && booking?.drop_lng != null && booking?.drop_lat != null
+                      ? [Number(booking.drop_lng), Number(booking.drop_lat)]
+                      : [Number(booking.pickup_lng), Number(booking.pickup_lat)],
                   },
                 }}
               >
                 <Mapbox.CircleLayer
-                  id="cat-pickup-halo-outer"
+                  id="cat-active-halo-outer"
                   style={{
                     circleRadius: 22,
-                    circleColor: 'rgba(0,229,255,0.18)',
+                    circleColor: isTripToDrop ? 'rgba(233,30,99,0.18)' : 'rgba(0,229,255,0.18)',
                     circleStrokeWidth: 2.5,
-                    circleStrokeColor: '#00E5FF',
+                    circleStrokeColor: isTripToDrop ? '#E91E63' : '#00E5FF',
                     circlePitchAlignment: 'map',
                   }}
                 />
                 <Mapbox.CircleLayer
-                  id="cat-pickup-halo-core"
+                  id="cat-active-halo-core"
                   style={{
                     circleRadius: 7,
-                    circleColor: '#00E5FF',
+                    circleColor: isTripToDrop ? '#E91E63' : '#00E5FF',
                     circleStrokeWidth: 2,
                     circleStrokeColor: '#FFFFFF',
                     circlePitchAlignment: 'map',
@@ -946,7 +984,7 @@ const CustomerActiveTripScreen = () => {
                 </Mapbox.PointAnnotation>
               )}
 
-              {routeToPickup && (booking?.status === 'ACCEPTED' || booking?.status === 'STARTED') && (
+              {routeToPickup && (booking?.status === 'ACCEPTED' || isTripToDrop) && (
                 <Mapbox.ShapeSource id="cat-route-source" shape={routeToPickup}>
                   <Mapbox.LineLayer
                     id="cat-route-line"
@@ -1492,31 +1530,33 @@ const CustomerActiveTripScreen = () => {
               </Mapbox.PointAnnotation>
 
               <Mapbox.ShapeSource
-                id="fs-pickup-halo"
+                id="fs-active-halo"
                 shape={{
                   type: 'Feature',
                   properties: {},
                   geometry: {
                     type: 'Point',
-                    coordinates: [Number(booking.pickup_lng), Number(booking.pickup_lat)],
+                    coordinates: isTripToDrop && booking?.drop_lng != null && booking?.drop_lat != null
+                      ? [Number(booking.drop_lng), Number(booking.drop_lat)]
+                      : [Number(booking.pickup_lng), Number(booking.pickup_lat)],
                   },
                 }}
               >
                 <Mapbox.CircleLayer
-                  id="fs-pickup-halo-outer"
+                  id="fs-active-halo-outer"
                   style={{
                     circleRadius: 22,
-                    circleColor: 'rgba(0,229,255,0.18)',
+                    circleColor: isTripToDrop ? 'rgba(233,30,99,0.18)' : 'rgba(0,229,255,0.18)',
                     circleStrokeWidth: 2.5,
-                    circleStrokeColor: '#00E5FF',
+                    circleStrokeColor: isTripToDrop ? '#E91E63' : '#00E5FF',
                     circlePitchAlignment: 'map',
                   }}
                 />
                 <Mapbox.CircleLayer
-                  id="fs-pickup-halo-core"
+                  id="fs-active-halo-core"
                   style={{
                     circleRadius: 7,
-                    circleColor: '#00E5FF',
+                    circleColor: isTripToDrop ? '#E91E63' : '#00E5FF',
                     circleStrokeWidth: 2,
                     circleStrokeColor: '#FFFFFF',
                     circlePitchAlignment: 'map',
@@ -1536,7 +1576,7 @@ const CustomerActiveTripScreen = () => {
                 </Mapbox.PointAnnotation>
               )}
 
-              {routeToPickup && (booking?.status === 'ACCEPTED' || booking?.status === 'STARTED') && (
+              {routeToPickup && (booking?.status === 'ACCEPTED' || isTripToDrop) && (
                 <Mapbox.ShapeSource id="fs-route-source" shape={routeToPickup}>
                   <Mapbox.LineLayer
                     id="fs-route-line"

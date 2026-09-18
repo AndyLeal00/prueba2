@@ -43,7 +43,7 @@ const OtpCountdownNotification: React.FC<OtpCountdownNotificationProps> = ({
         const startTime = new Date(data.otp_timer_started_at).getTime();
         const now = new Date().getTime();
         const elapsed = (now - startTime) / 1000;
-        const remaining = Math.max(0, 180 - elapsed); // 3 minutos
+        const remaining = Math.min(180, Math.max(0, 180 - elapsed)); // 3 minutos
 
         setTimeRemaining(Math.ceil(remaining));
         setIsExpired(remaining <= 0);

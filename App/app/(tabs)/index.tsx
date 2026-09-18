@@ -62,6 +62,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DriverReservationsScreen from "./DriverReservationsScreen";
 import { ActiveTripBannerStack } from "@/components/ActiveTripFloatingBanner";
 import { useActiveTripBanner } from "@/hooks/useActiveTripBanner";
+import DriverNotificationsModal from "@/components/DriverNotificationsModal";
 import * as Speech from "expo-speech";
 import { useAppDispatch } from "../../common/store/hooks";
 import { updateUserProfile } from "@/common/reducers/authReducer";
@@ -987,8 +988,30 @@ const MapScreen = () => {
 
   const [driverHasUnreadNotif, setDriverHasUnreadNotif] = useState(false);
   const [driverActiveBookingId, setDriverActiveBookingId] = useState<string | null>(null);
+  const [driverNotifModalVisible, setDriverNotifModalVisible] = useState(false);
   const driverLastBookingIdRef = useRef<string | null>(null);
   const driverBellAnim = useRef(new Animated.Value(0)).current;
+  const driverBellFloat = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isDriverView) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(driverBellFloat, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(driverBellFloat, {
+          toValue: 0,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isDriverView, driverBellFloat]);
 
   const shakeDriverBell = useCallback(() => {
     Animated.sequence([
@@ -1004,12 +1027,18 @@ const MapScreen = () => {
   const onDriverBellPress = useCallback(() => {
     setDriverHasUnreadNotif(false);
     shakeDriverBell();
-    navigation.navigate('Notifications' as never);
-  }, [navigation, shakeDriverBell]);
+    // Antes: navigation.navigate('Notifications') → pantalla completa NotificationsScreen.
+    // Se conserva la pantalla en el stack; ahora la campanita abre el modal de servicios/noticias.
+    setDriverNotifModalVisible(true);
+  }, [shakeDriverBell]);
 
   const driverBellRot = driverBellAnim.interpolate({
     inputRange: [-15, 0, 15],
     outputRange: ['-15deg', '0deg', '15deg'],
+  });
+  const driverBellY = driverBellFloat.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -2.5],
   });
 
   const refreshDriverActiveBooking = useCallback(async () => {
@@ -2614,11 +2643,23 @@ const MapScreen = () => {
                 style={nS.driverNotifBtn}
                 onPress={onDriverBellPress}
                 activeOpacity={0.8}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Animated.View style={{ transform: [{ rotate: driverBellRot }] }}>
-                  <Ionicons name="notifications-outline" size={22} color="rgba(255,255,255,0.85)" />
+                <Animated.View
+                  style={{
+                    transform: [
+                      { rotate: driverBellRot },
+                      { translateY: driverBellY },
+                    ],
+                  }}
+                >
+                  <Ionicons name="notifications" size={28} color="#00E5FF" />
                 </Animated.View>
-                {(driverHasUnreadNotif || !!driverActiveBookingId) && <View style={nS.driverNotifDot} />}
+                {(driverHasUnreadNotif || !!driverActiveBookingId) && (
+                  <View style={nS.driverNotifDot}>
+                    <View style={nS.driverNotifDotInner} />
+                  </View>
+                )}
               </TouchableOpacity>
 
               {/* Avatar de perfil en top bar — ya no necesario (Perfil está en el navbar) */}
@@ -3186,6 +3227,26 @@ const MapScreen = () => {
         buttons={alertButtons}
         onDismiss={() => setAlertVisible(false)}
       />
+
+      {isDriverView ? (
+        <DriverNotificationsModal
+          visible={driverNotifModalVisible}
+          onClose={() => setDriverNotifModalVisible(false)}
+          onOpenBookingDetail={(booking) => {
+            setDriverNotifModalVisible(false);
+            const type = String(booking?.booking_type || '').toLowerCase();
+            const tab = type.includes('reserv') ? 'reservations' : 'immediate';
+            try {
+              navigation.navigate(
+                'DriverReservations' as never,
+                { initialTab: tab, highlightBookingId: booking?.id } as never,
+              );
+            } catch (e) {
+              console.warn('[DriverNotificationsModal] navigate failed', e);
+            }
+          }}
+        />
+      ) : null}
 
   
     </View>
@@ -4833,26 +4894,31 @@ const nS = StyleSheet.create({
     overflow: 'hidden',
   },
   driverNotifBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(10,46,61,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,229,255,0.22)',
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   driverNotifDot: {
     position: 'absolute',
-    top: 10,
-    right: 10,
+    top: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#051A26',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverNotifDotInner: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#E91E63',
-    shadowColor: '#E91E63',
+    backgroundColor: '#00E676',
+    shadowColor: '#00E676',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.8,
     shadowRadius: 4,
     elevation: 2,
   },

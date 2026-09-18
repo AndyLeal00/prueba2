@@ -25,6 +25,14 @@ import { API_KEY } from '@/config/AppConfig';
 import { GOOGLE_MAPS_DARK_STYLE } from '@/config/googleMapsDarkStyle';
 import { useActiveTripBanner } from '@/hooks/useActiveTripBanner';
 import { ActiveTripBannerCard } from '@/components/ActiveTripFloatingBanner';
+import {
+  recordServiceNotice,
+  listServiceNotices,
+  getTakenReservationGhosts,
+  upsertTakenReservationGhost,
+  formatCountdown,
+  type TakenReservationGhost,
+} from '@/common/services/driverServiceNotices';
 
 const IMMEDIATE_RANGE_KM = 3;
 const ROUTE_LINE_BLUE = '#00E5FF';
@@ -247,6 +255,9 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   }, [dispatch, driverConductorId]);
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [takenGhosts, setTakenGhosts] = useState<TakenReservationGhost[]>([]);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const lastPendingReservationsRef = useRef<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
@@ -423,7 +434,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
   const fetchReservations = useCallback(async () => {
     try {
       const headers = await getSupabaseAuthHeaders();
-      // Filtro explícito: SOLO reservas programadas
+      // Filtro explícito: SOLO reservas programadas disponibles
       const url = `${SUPABASE_URL}/rest/v1/bookings?booking_type=eq.reservation&status=eq.PENDING&order=booking_date.asc`;
       console.log('[RESERVAS] Trayendo reservas con filtro:', url);
       const res = await fetch(url, { headers });
@@ -464,11 +475,60 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
               `Recogida: ${pickup}${when}`,
               { bookingId: it.id, bookingType: 'reservation' },
             ).catch(() => {});
+            recordServiceNotice({
+              bookingId: String(it.id),
+              bookingType: 'reservation',
+              title: 'Nueva reserva programada',
+              body: `Recogida: ${pickup}${when}`,
+              pickup: it.pickup_address,
+              drop: it.drop_address,
+              reference: it.reference,
+              bookingSnapshot: it,
+            }).catch(() => {});
           }
         }
       }
-      seenReservationIdsRef.current = currentIds;
 
+      // Reservas que desaparecieron del PENDING → si otro las tomó, fantasma 5 min
+      const prevList = lastPendingReservationsRef.current;
+      const candidateIds = new Set<string>(prevList.map((p) => String(p.id)));
+      try {
+        const notices = await listServiceNotices();
+        for (const n of notices) {
+          if (n.bookingType === 'reservation') candidateIds.add(n.bookingId);
+        }
+      } catch {
+        // ignore
+      }
+      for (const id of candidateIds) {
+        if (currentIds.has(id)) continue;
+        try {
+          const detailUrl = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${encodeURIComponent(id)}&select=*&limit=1`;
+          const dRes = await fetch(detailUrl, { headers });
+          if (!dRes.ok) continue;
+          const rows = await dRes.json();
+          const row = Array.isArray(rows) ? rows[0] : null;
+          if (!row) continue;
+          const st = String(row.status || '').toUpperCase();
+          const taken =
+            st === 'ACCEPTED' ||
+            st === 'ARRIVED' ||
+            st === 'STARTED' ||
+            st === 'IN_PROGRESS' ||
+            st === 'TRIP_STARTED' ||
+            Boolean(String(row.driver || row.driver_id || '').trim());
+          if (taken) {
+            await upsertTakenReservationGhost(row);
+          }
+        } catch {
+          // ignore per-id
+        }
+      }
+
+      const ghosts = await getTakenReservationGhosts();
+      setTakenGhosts(ghosts);
+      lastPendingReservationsRef.current = list;
+      seenReservationIdsRef.current = currentIds;
       setReservations(list);
     } catch (e) {
       console.error('❌ Fetch reservations error:', e);
@@ -477,6 +537,20 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
       setRefreshing(false);
     }
   }, [activeCarType]);
+
+  // Cargar fantasmas al montar + ticker de cuenta regresiva
+  useEffect(() => {
+    getTakenReservationGhosts().then(setTakenGhosts).catch(() => {});
+    const tick = setInterval(() => {
+      const now = Date.now();
+      setNowTick(now);
+      setTakenGhosts((prev) => {
+        const alive = prev.filter((g) => g.expiresAt > now);
+        return alive.length === prev.length ? prev : alive;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, []);
 
   /* ── Buscar servicios inmediatos disponibles ── */
   const searchImmediateServices = useCallback(async () => {
@@ -562,6 +636,16 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
               `Recogida: ${pickup}${distTxt}`,
               { bookingId: it.id, bookingType: 'immediate' },
             ).catch(() => {});
+            recordServiceNotice({
+              bookingId: String(it.id),
+              bookingType: 'immediate',
+              title: 'Nuevo servicio inmediato',
+              body: `Recogida: ${pickup}${distTxt}`,
+              pickup: it.pickup_address,
+              drop: it.drop_address,
+              reference: it.reference,
+              bookingSnapshot: it,
+            }).catch(() => {});
           }
         }
 
@@ -715,6 +799,21 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
         if (isImmediate) {
           searchImmediateServices();
         } else {
+          // Mantener visible 5 min como “tomada”
+          try {
+            const fullUrl = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${encodeURIComponent(reservation.id)}&select=*&limit=1`;
+            const fullRes = await fetch(fullUrl, { headers });
+            if (fullRes.ok) {
+              const rows = await fullRes.json();
+              const row = Array.isArray(rows) ? rows[0] : null;
+              if (row) {
+                const ghosts = await upsertTakenReservationGhost(row);
+                setTakenGhosts(ghosts);
+              }
+            }
+          } catch {
+            // ignore
+          }
           fetchReservations();
         }
         return;
@@ -989,17 +1088,19 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
     const tripLabel = item.trip_type || 'Ida';
     const distKm = parseFloat(String(item.distance || 0));
     const durationMin = Number(item.duration || 0);
+    const isTaken = !!item.__taken;
+    const msLeft = isTaken ? Math.max(0, Number(item.__expiresAt || 0) - nowTick) : 0;
 
     return (
     <Animatable.View animation="fadeInUp" duration={400} delay={index * 40} useNativeDriver>
-      <View style={s.card}>
+      <View style={[s.card, isTaken && s.cardTaken]}>
         <View style={s.cardTop}>
           <View style={s.cardMain}>
             <View style={s.clientRow}>
               {photo ? (
-                <Image source={{ uri: photo }} style={s.avatarImg} />
+                <Image source={{ uri: photo }} style={[s.avatarImg, isTaken && { opacity: 0.55 }]} />
               ) : (
-                <View style={s.avatarFallback}>
+                <View style={[s.avatarFallback, isTaken && { opacity: 0.55 }]}>
                   <Ionicons name="person" size={14} color="#00E5FF" />
                 </View>
               )}
@@ -1021,34 +1122,43 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
               </View>
             </View>
 
-            <View style={s.metricsRow}>
-              <View style={s.pricePill}>
-                <Text style={s.pricePillTxt}>$ {moneyFmt(fare.min)}</Text>
-                {!fare.isComplete && fare.max !== fare.min ? (
+            {isTaken ? (
+              <View style={s.takenBanner}>
+                <Ionicons name="lock-closed" size={12} color="#FF8A80" />
+                <Text style={s.takenBannerTxt} numberOfLines={1}>
+                  Ya la tomó otro conductor · {formatCountdown(msLeft)}
+                </Text>
+              </View>
+            ) : (
+              <View style={s.metricsRow}>
+                <View style={s.pricePill}>
+                  <Text style={s.pricePillTxt}>$ {moneyFmt(fare.min)}</Text>
+                  {!fare.isComplete && fare.max !== fare.min ? (
+                    <>
+                      <Text style={s.pricePillSep}>–</Text>
+                      <Text style={s.pricePillTxt}>$ {moneyFmt(fare.max)}</Text>
+                    </>
+                  ) : null}
+                </View>
+                <Text style={s.metricTxt}>{distKm.toFixed(1)} km</Text>
+                <Text style={s.metricDot}>·</Text>
+                <Text style={s.metricTxt}>{durationMin || 0} min</Text>
+                {item.booking_date ? (
                   <>
-                    <Text style={s.pricePillSep}>–</Text>
-                    <Text style={s.pricePillTxt}>$ {moneyFmt(fare.max)}</Text>
+                    <Text style={s.metricDot}>·</Text>
+                    <Text style={s.metricTxt}>{formatTime(item.booking_date)}</Text>
                   </>
                 ) : null}
               </View>
-              <Text style={s.metricTxt}>{distKm.toFixed(1)} km</Text>
-              <Text style={s.metricDot}>·</Text>
-              <Text style={s.metricTxt}>{durationMin || 0} min</Text>
-              {item.booking_date ? (
-                <>
-                  <Text style={s.metricDot}>·</Text>
-                  <Text style={s.metricTxt}>{formatTime(item.booking_date)}</Text>
-                </>
-              ) : null}
-            </View>
+            )}
           </View>
 
           <TouchableOpacity
-            style={s.verBtn}
+            style={[s.verBtn, isTaken && s.verBtnTaken]}
             onPress={() => openServiceDetail(item)}
             activeOpacity={0.85}
           >
-            <Text style={s.verBtnTxt}>Ver</Text>
+            <Text style={[s.verBtnTxt, isTaken && s.verBtnTxtTaken]}>Ver</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1088,7 +1198,16 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
 
   const listData =
     activeTab === 'reservations'
-      ? reservations
+      ? [
+          ...reservations.map((r) => ({ ...r, __taken: false as const, __expiresAt: 0 })),
+          ...takenGhosts
+            .filter((g) => g.expiresAt > nowTick)
+            .map((g) => ({
+              ...(g.booking as any),
+              __taken: true as const,
+              __expiresAt: g.expiresAt,
+            })),
+        ]
       : activeTab === 'immediate'
         ? immediateServices
         : [];
@@ -1541,32 +1660,49 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
             ) : null}
 
             <View style={s.modalActions}>
-              <TouchableOpacity
-                style={s.soltarBtn}
-                onPress={closeServiceDetail}
-                activeOpacity={0.85}
-              >
-                <Text style={s.soltarBtnTxt}>Rechazar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.acceptBtnModal, accepting === detailItem?.id && { opacity: 0.6 }]}
-                onPress={() => {
-                  if (!detailItem) return;
-                  const item = detailItem;
-                  closeServiceDetail();
-                  handleAccept(item);
-                }}
-                disabled={!!detailItem && accepting === detailItem.id}
-                activeOpacity={0.85}
-              >
-                {detailItem && accepting === detailItem.id ? (
-                  <ActivityIndicator color="#051A26" size="small" />
-                ) : (
-                  <Text style={s.acceptTxt}>
-                    {detailItem?.booking_type === 'immediate' ? 'Aceptar Servicio' : 'Aceptar Reserva'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+              {detailItem?.__taken ? (
+                <View style={s.takenDetailBox}>
+                  <Ionicons name="information-circle" size={18} color="#FF8A80" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.takenDetailTitle}>Ya la tomó otro conductor</Text>
+                    <Text style={s.takenDetailSub}>
+                      Desaparece en {formatCountdown(Math.max(0, Number(detailItem.__expiresAt || 0) - nowTick))}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={closeServiceDetail} style={s.takenCloseBtn}>
+                    <Text style={s.takenCloseTxt}>Cerrar</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={s.soltarBtn}
+                    onPress={closeServiceDetail}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={s.soltarBtnTxt}>Rechazar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.acceptBtnModal, accepting === detailItem?.id && { opacity: 0.6 }]}
+                    onPress={() => {
+                      if (!detailItem) return;
+                      const item = detailItem;
+                      closeServiceDetail();
+                      handleAccept(item);
+                    }}
+                    disabled={!!detailItem && accepting === detailItem.id}
+                    activeOpacity={0.85}
+                  >
+                    {detailItem && accepting === detailItem.id ? (
+                      <ActivityIndicator color="#051A26" size="small" />
+                    ) : (
+                      <Text style={s.acceptTxt}>
+                        {detailItem?.booking_type === 'immediate' ? 'Aceptar Servicio' : 'Aceptar Reserva'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           </View>
         </View>
@@ -1700,6 +1836,54 @@ const s = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(0,229,255,0.18)',
   },
+  cardTaken: {
+    borderColor: 'rgba(255,138,128,0.35)',
+    backgroundColor: 'rgba(40,20,24,0.72)',
+    opacity: 0.95,
+  },
+  takenBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,82,82,0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,138,128,0.35)',
+  },
+  takenBannerTxt: {
+    flex: 1,
+    color: '#FF8A80',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  verBtnTaken: {
+    backgroundColor: 'rgba(255,138,128,0.12)',
+    borderColor: 'rgba(255,138,128,0.4)',
+  },
+  verBtnTxtTaken: { color: '#FF8A80' },
+  takenDetailBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(255,82,82,0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,138,128,0.35)',
+  },
+  takenDetailTitle: { color: '#FF8A80', fontSize: 13, fontWeight: '800' },
+  takenDetailSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 2, fontWeight: '600' },
+  takenCloseBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  takenCloseTxt: { color: '#FFF', fontSize: 12, fontWeight: '700' },
   cardTop: {
     flexDirection: 'row',
     alignItems: 'center',

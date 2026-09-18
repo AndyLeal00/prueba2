@@ -689,7 +689,8 @@ const ReservationTripScreen = () => {
       
       setPhase('ARRIVED_AT_PICKUP');
       setWaitingForOtpTimer(true); // ⏱️ Mostrar estado de espera
-      localTimerStart.current = Date.now(); // Iniciar countdown local inmediatamente
+      const startedAtMs = Date.now();
+      localTimerStart.current = startedAtMs; // Mismo instante que se escribe en Supabase
       
       updateDriverNotification(
         '📍 Has llegado al punto de recogida',
@@ -697,7 +698,7 @@ const ReservationTripScreen = () => {
       ).catch(() => {});
 
       // ⏱️ INICIAR TIMER DE 3 MINUTOS (No mostrar modal aún)
-      otpTimer.startTimer().catch((err: any) => {
+      otpTimer.startTimer(startedAtMs).catch((err: any) => {
         console.error('⚠️ Error al iniciar timer en Supabase (countdown local continúa):', err);
       });
       console.log('✅ Timer OTP iniciado - 3 minutos de espera');
@@ -829,7 +830,8 @@ const ReservationTripScreen = () => {
           if (data.otp_timer_started_at) {
             const startTime = new Date(data.otp_timer_started_at).getTime();
             const elapsed = (Date.now() - startTime) / 1000;
-            const remaining = Math.max(0, 180 - elapsed);
+            const remaining = Math.min(180, Math.max(0, 180 - elapsed));
+            setDriverCountdown(Math.ceil(remaining));
             console.log(`✅ [RELOAD] Timer activo, remaining: ${remaining.toFixed(1)}s`);
 
             if (!data.otp_verified && remaining > 0) {
@@ -860,10 +862,9 @@ const ReservationTripScreen = () => {
     }
 
     const updateCountdown = () => {
-      // Preferir timestamp de Supabase, fallback a timestamp local
-      const startTime = otpTimer.timerStartedAt
-        ? new Date(otpTimer.timerStartedAt).getTime()
-        : localTimerStart.current;
+      // Preferir timestamp local (mismo instante escrito a Supabase); fallback a DB
+      const startTime = localTimerStart.current
+        ?? (otpTimer.timerStartedAt ? new Date(otpTimer.timerStartedAt).getTime() : null);
 
       if (!startTime) {
         setDriverCountdown(180);
@@ -871,7 +872,7 @@ const ReservationTripScreen = () => {
       }
 
       const elapsed = (Date.now() - startTime) / 1000;
-      const remaining = Math.max(0, 180 - elapsed);
+      const remaining = Math.min(180, Math.max(0, 180 - elapsed));
       setDriverCountdown(Math.ceil(remaining));
 
       if (remaining <= 0) {

@@ -60,10 +60,11 @@ export const useOtpTimer = ({
       }
 
       const startTime = new Date(timerData.otp_timer_started_at).getTime();
-      const duration = timerData.otp_timer_duration || 180;
+      // Siempre 3 minutos (180s) — ignora valores viejos/erróneos en DB
+      const duration = 180;
       const now = new Date().getTime();
       const elapsed = (now - startTime) / 1000;
-      const remaining = Math.max(0, duration - elapsed);
+      const remaining = Math.min(duration, Math.max(0, duration - elapsed));
       const isExpired = remaining <= 0;
 
       setTimerState((prev) => ({
@@ -101,9 +102,9 @@ export const useOtpTimer = ({
     return () => clearInterval(interval);
   }, [bookingId, fetchTimerState]);
 
-  const startTimer = useCallback(async () => {
+  const startTimer = useCallback(async (startedAtMs?: number) => {
     try {
-      const now = new Date().toISOString();
+      const now = new Date(startedAtMs ?? Date.now()).toISOString();
       const { error } = await (supabase as any)
         .from('bookings')
         .update({ otp_timer_started_at: now, otp_timer_duration: 180 })

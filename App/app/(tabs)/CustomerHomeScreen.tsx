@@ -421,9 +421,13 @@ const CustomerHomeScreen = () => {
             <Text style={s.greetLabel}>{greeting()}</Text>
             <Text style={s.greetName}>{displayName}</Text>
           </View>
-          <Pressable style={({ pressed }) => [s.notifBtn, pressed && s.notifBtnPressed]} onPress={onBellPress}>
+          <Pressable
+            style={({ pressed }) => [s.notifBtn, pressed && s.notifBtnPressed]}
+            onPress={onBellPress}
+            hitSlop={10}
+          >
             <Animated.View style={{ transform: [{ rotate: bellRot }] }}>
-              <Ionicons name="notifications-outline" size={22} color="rgba(255,255,255,0.7)" />
+              <Ionicons name="notifications-outline" size={28} color="rgba(255,255,255,0.85)" />
             </Animated.View>
             {(hasUnread || !!activeBookingId) && <View style={s.notifDot} />}
           </Pressable>
@@ -539,9 +543,9 @@ const s = StyleSheet.create({
   greetWrap: { flex: 1 },
   greetLabel: { fontSize: 13, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 },
   greetName: { fontSize: 20, fontWeight: '700', color: '#ffffff', letterSpacing: -0.3 },
-  notifBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(10,46,61,0.55)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.12)', justifyContent: 'center', alignItems: 'center' },
-  notifDot: { position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: '#E91E63', shadowColor: '#E91E63', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 4, elevation: 2 },
-  notifBtnPressed: { backgroundColor: 'rgba(0,229,255,0.15)', borderColor: 'rgba(0,229,255,0.3)' },
+  notifBtn: { width: 40, height: 40, backgroundColor: 'transparent', borderWidth: 0, justifyContent: 'center', alignItems: 'center' },
+  notifDot: { position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: 4, backgroundColor: '#E91E63', shadowColor: '#E91E63', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 4, elevation: 2 },
+  notifBtnPressed: { opacity: 0.7 },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: H_PAD, paddingTop: 18 },
   destCard: { marginBottom: 28, paddingVertical: 16, paddingHorizontal: 24, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', shadowColor: '#000000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 14, elevation: 5 },
