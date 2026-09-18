@@ -3,7 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const NOTICES_KEY = 'driver_service_notices_v1';
 const TAKEN_GHOSTS_KEY = 'driver_taken_reservation_ghosts_v1';
 
-export const TAKEN_RESERVATION_TTL_MS = 5 * 60 * 1000;
+/** Tiempo que permanece visible un servicio/reserva ya tomado (3 minutos). */
+export const TAKEN_SERVICE_TTL_MS = 3 * 60 * 1000;
+/** @deprecated usar TAKEN_SERVICE_TTL_MS — alias para compatibilidad */
+export const TAKEN_RESERVATION_TTL_MS = TAKEN_SERVICE_TTL_MS;
 
 export type ServiceNoticeKind = 'reservation' | 'immediate';
 
@@ -19,6 +22,11 @@ export type ServiceNotice = {
   createdAt: number;
   /** Snapshot parcial del booking al notificar */
   bookingSnapshot?: Record<string, unknown> | null;
+  /**
+   * Si el servicio ya no está disponible: timestamp absoluto de desaparición.
+   * Se fija UNA vez al detectar "tomado" y no se resetea al reabrir el modal.
+   */
+  takenExpiresAt?: number | null;
 };
 
 export type TakenReservationGhost = {
@@ -61,24 +69,62 @@ export async function recordServiceNotice(
     reference: partial.reference,
     bookingSnapshot: partial.bookingSnapshot ?? null,
     createdAt: Date.now(),
+    takenExpiresAt: null,
   };
   const prev = await readJson<ServiceNotice[]>(NOTICES_KEY, []);
-  // Evitar duplicados del mismo booking recientes (< 2 min)
+  // Evitar duplicados del mismo booking recientes (< 2 min) — conservar takenExpiresAt si existía
+  const existing = prev.find((n) => n.bookingId === notice.bookingId);
   const filtered = prev.filter(
     (n) =>
       !(n.bookingId === notice.bookingId && Date.now() - n.createdAt < 120_000),
   );
-  const next = [notice, ...filtered].slice(0, 80);
+  const merged: ServiceNotice = {
+    ...notice,
+    // Si ya estaba marcado como tomado, no perder el contador
+    takenExpiresAt: existing?.takenExpiresAt && existing.takenExpiresAt > Date.now()
+      ? existing.takenExpiresAt
+      : notice.takenExpiresAt,
+  };
+  const next = [merged, ...filtered.filter((n) => n.bookingId !== notice.bookingId)].slice(0, 80);
   await writeJson(NOTICES_KEY, next);
-  return notice;
+  return merged;
 }
 
 export async function listServiceNotices(): Promise<ServiceNotice[]> {
-  return readJson<ServiceNotice[]>(NOTICES_KEY, []);
+  const list = await readJson<ServiceNotice[]>(NOTICES_KEY, []);
+  const now = Date.now();
+  // Quitar notificaciones cuyo TTL de "tomado" ya venció
+  const alive = list.filter((n) => !n.takenExpiresAt || n.takenExpiresAt > now);
+  if (alive.length !== list.length) await writeJson(NOTICES_KEY, alive);
+  return alive;
 }
 
 export async function clearServiceNotices(): Promise<void> {
   await writeJson(NOTICES_KEY, []);
+}
+
+/**
+ * Marca una notificación como tomada.
+ * Si ya tenía takenExpiresAt vigente, NO lo resetea (evita reiniciar el contador al abrir el modal).
+ */
+export async function markNoticeTaken(bookingId: string): Promise<ServiceNotice | null> {
+  if (!bookingId) return null;
+  const prev = await readJson<ServiceNotice[]>(NOTICES_KEY, []);
+  const now = Date.now();
+  let found: ServiceNotice | null = null;
+  let changed = false;
+  const next = prev.map((n) => {
+    if (n.bookingId !== bookingId) return n;
+    if (n.takenExpiresAt && n.takenExpiresAt > now) {
+      found = n;
+      return n;
+    }
+    changed = true;
+    found = { ...n, takenExpiresAt: now + TAKEN_SERVICE_TTL_MS };
+    return found;
+  });
+  if (changed) await writeJson(NOTICES_KEY, next);
+  return found;
 }
 
 export async function getTakenReservationGhosts(): Promise<TakenReservationGhost[]> {
@@ -89,16 +135,26 @@ export async function getTakenReservationGhosts(): Promise<TakenReservationGhost
   return alive;
 }
 
+/**
+ * Fantasma solo para RESERVAS en el tab Reservas (3 min tras ser aceptadas por otro).
+ * Conserva expiresAt original si ya existía — no reinicia el contador.
+ */
 export async function upsertTakenReservationGhost(
   booking: Record<string, unknown>,
 ): Promise<TakenReservationGhost[]> {
   const bookingId = String(booking.id || '');
   if (!bookingId) return getTakenReservationGhosts();
+
+  const bt = String(booking.booking_type || '').toLowerCase();
+  // Solo reservas programadas permanecen en el listado de Reservas
+  if (bt && !bt.includes('reserv')) {
+    return getTakenReservationGhosts();
+  }
+
   const now = Date.now();
   const prev = await getTakenReservationGhosts();
   const existing = prev.find((g) => g.bookingId === bookingId);
   if (existing) {
-    // Refrescar snapshot pero conservar expiresAt original
     const next = prev.map((g) =>
       g.bookingId === bookingId ? { ...g, booking: { ...g.booking, ...booking } } : g,
     );
@@ -109,7 +165,7 @@ export async function upsertTakenReservationGhost(
     bookingId,
     booking,
     takenAt: now,
-    expiresAt: now + TAKEN_RESERVATION_TTL_MS,
+    expiresAt: now + TAKEN_SERVICE_TTL_MS,
   };
   const next = [ghost, ...prev].slice(0, 40);
   await writeJson(TAKEN_GHOSTS_KEY, next);

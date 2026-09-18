@@ -17,7 +17,9 @@ import { FIXED_TEXT_PROPS } from '@/common/utils/typography';
 import { SUPABASE_URL, getSupabaseAuthHeaders } from '@/config/SupabaseConfig';
 import {
   listServiceNotices,
+  markNoticeTaken,
   upsertTakenReservationGhost,
+  formatCountdown,
   type ServiceNotice,
 } from '@/common/services/driverServiceNotices';
 
@@ -101,6 +103,7 @@ const DriverNotificationsModal: React.FC<Props> = ({
       for (const n of raw.slice(0, 40)) {
         let available: boolean | null = null;
         let liveBooking: any = n.bookingSnapshot || null;
+        let takenExpiresAt = n.takenExpiresAt ?? null;
         try {
           const url = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${encodeURIComponent(n.bookingId)}&select=*&limit=1`;
           const res = await fetch(url, { headers });
@@ -114,17 +117,28 @@ const DriverNotificationsModal: React.FC<Props> = ({
               const open =
                 (st === 'NEW' || st === 'PENDING') && !hasDriver;
               available = open;
-              if (!open && n.bookingType === 'reservation') {
-                await upsertTakenReservationGhost(row);
+              if (!open) {
+                // Ambos (reserva e inmediato) permanecen 3 min en notificaciones.
+                // markNoticeTaken NO reinicia el contador si ya existía.
+                const marked = await markNoticeTaken(n.bookingId);
+                takenExpiresAt = marked?.takenExpiresAt ?? takenExpiresAt;
+                // Solo reservas: fantasma en tab Reservas
+                if (n.bookingType === 'reservation') {
+                  await upsertTakenReservationGhost(row);
+                }
               }
             } else {
               available = false;
+              const marked = await markNoticeTaken(n.bookingId);
+              takenExpiresAt = marked?.takenExpiresAt ?? takenExpiresAt;
             }
           }
         } catch {
           available = null;
         }
-        enriched.push({ ...n, available, liveBooking });
+        // Si el TTL ya venció, no mostrar
+        if (takenExpiresAt && takenExpiresAt <= Date.now()) continue;
+        enriched.push({ ...n, available, liveBooking, takenExpiresAt });
       }
       setNotices(enriched);
     } finally {
@@ -136,7 +150,12 @@ const DriverNotificationsModal: React.FC<Props> = ({
     if (!visible) return;
     translateY.setValue(0);
     refresh();
-    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    const t = setInterval(() => {
+      const now = Date.now();
+      setNowTick(now);
+      // Quitar del listado las que ya cumplieron 3 min
+      setNotices((prev) => prev.filter((n) => !n.takenExpiresAt || n.takenExpiresAt > now));
+    }, 1000);
     return () => clearInterval(t);
   }, [visible, refresh, translateY]);
 
@@ -150,6 +169,10 @@ const DriverNotificationsModal: React.FC<Props> = ({
     const isTaken = item.available === false;
     const booking = item.liveBooking || item.bookingSnapshot || { id: item.bookingId };
     const kindLabel = item.bookingType === 'reservation' ? 'Programado' : 'Inmediato';
+    const msLeft =
+      isTaken && item.takenExpiresAt
+        ? Math.max(0, item.takenExpiresAt - nowTick)
+        : 0;
 
     return (
       <View style={[styles.card, isTaken && styles.cardTaken]}>
@@ -180,10 +203,22 @@ const DriverNotificationsModal: React.FC<Props> = ({
             style={styles.detailBtn}
             activeOpacity={0.85}
             onPress={() =>
-              onOpenBookingDetail(booking, {
-                taken: isTaken,
-                expiresAt: isTaken ? Date.now() + 5 * 60 * 1000 : undefined,
-              })
+              onOpenBookingDetail(
+                {
+                  ...booking,
+                  booking_type:
+                    booking?.booking_type ||
+                    (item.bookingType === 'reservation' ? 'reservation' : 'immediate'),
+                  ...(isTaken
+                    ? { __taken: true, __expiresAt: item.takenExpiresAt || 0 }
+                    : {}),
+                },
+                {
+                  taken: isTaken,
+                  // Usar el expiresAt persistido — nunca reiniciar con Date.now()
+                  expiresAt: isTaken ? (item.takenExpiresAt || undefined) : undefined,
+                },
+              )
             }
           >
             <Ionicons name="eye-outline" size={14} color={ACCENT} />
@@ -191,7 +226,9 @@ const DriverNotificationsModal: React.FC<Props> = ({
           </TouchableOpacity>
           {isTaken ? (
             <Text {...FIXED_TEXT_PROPS} style={styles.takenHint}>
-              Ya la tomó otro conductor
+              {msLeft > 0
+                ? `Ya la tomó otro · ${formatCountdown(msLeft)}`
+                : 'Ya la tomó otro conductor'}
             </Text>
           ) : null}
         </View>
@@ -453,7 +490,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,229,255,0.28)',
   },
   detailBtnTxt: { color: ACCENT, fontSize: 12, fontWeight: '700' },
-  takenHint: { color: 'rgba(255,255,255,0.4)', fontSize: 11, flexShrink: 1 },
+  takenHint: {
+    color: 'rgba(255,138,128,0.95)',
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'right',
+  },
   empty: {
     flex: 1,
     alignItems: 'center',

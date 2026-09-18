@@ -63,6 +63,7 @@ import DriverReservationsScreen from "./DriverReservationsScreen";
 import { ActiveTripBannerStack } from "@/components/ActiveTripFloatingBanner";
 import { useActiveTripBanner } from "@/hooks/useActiveTripBanner";
 import DriverNotificationsModal from "@/components/DriverNotificationsModal";
+import { listServiceNotices } from "@/common/services/driverServiceNotices";
 import * as Speech from "expo-speech";
 import { useAppDispatch } from "../../common/store/hooks";
 import { updateUserProfile } from "@/common/reducers/authReducer";
@@ -989,29 +990,9 @@ const MapScreen = () => {
   const [driverHasUnreadNotif, setDriverHasUnreadNotif] = useState(false);
   const [driverActiveBookingId, setDriverActiveBookingId] = useState<string | null>(null);
   const [driverNotifModalVisible, setDriverNotifModalVisible] = useState(false);
+  const [pendingServiceDetail, setPendingServiceDetail] = useState<any | null>(null);
   const driverLastBookingIdRef = useRef<string | null>(null);
   const driverBellAnim = useRef(new Animated.Value(0)).current;
-  const driverBellFloat = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!isDriverView) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(driverBellFloat, {
-          toValue: 1,
-          duration: 1400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(driverBellFloat, {
-          toValue: 0,
-          duration: 1400,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isDriverView, driverBellFloat]);
 
   const shakeDriverBell = useCallback(() => {
     Animated.sequence([
@@ -1025,10 +1006,7 @@ const MapScreen = () => {
   }, [driverBellAnim]);
 
   const onDriverBellPress = useCallback(() => {
-    setDriverHasUnreadNotif(false);
     shakeDriverBell();
-    // Antes: navigation.navigate('Notifications') → pantalla completa NotificationsScreen.
-    // Se conserva la pantalla en el stack; ahora la campanita abre el modal de servicios/noticias.
     setDriverNotifModalVisible(true);
   }, [shakeDriverBell]);
 
@@ -1036,10 +1014,30 @@ const MapScreen = () => {
     inputRange: [-15, 0, 15],
     outputRange: ['-15deg', '0deg', '15deg'],
   });
-  const driverBellY = driverBellFloat.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -2.5],
-  });
+
+  // Indicador verde: hay notificaciones de servicios pendientes en el modal
+  useEffect(() => {
+    if (!isDriverView) return;
+    let cancelled = false;
+    const checkNotices = async () => {
+      try {
+        const notices = await listServiceNotices();
+        if (cancelled) return;
+        const hasFeed = (homeImmediateBookings?.length || 0) > 0;
+        if (notices.length > 0 || hasFeed) {
+          setDriverHasUnreadNotif(true);
+        } else if (!driverActiveBookingId) {
+          setDriverHasUnreadNotif(false);
+        }
+      } catch {}
+    };
+    checkNotices();
+    const id = setInterval(checkNotices, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isDriverView, driverActiveBookingId, homeImmediateBookings?.length]);
 
   const refreshDriverActiveBooking = useCallback(async () => {
     if (!isDriverView) return;
@@ -1104,6 +1102,14 @@ const MapScreen = () => {
   };
 
   const immediateBookings = useMemo(() => homeImmediateBookings || [], [homeImmediateBookings]);
+
+  // Circulito verde cuando hay servicios inmediatos en el feed
+  useEffect(() => {
+    if (!isDriverView) return;
+    if (immediateBookings.length > 0) {
+      setDriverHasUnreadNotif(true);
+    }
+  }, [isDriverView, immediateBookings.length]);
 
   useEffect(() => {
     if (!ENABLE_DRIVER_MAP_RESERVATIONS) {
@@ -2645,15 +2651,8 @@ const MapScreen = () => {
                 activeOpacity={0.8}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Animated.View
-                  style={{
-                    transform: [
-                      { rotate: driverBellRot },
-                      { translateY: driverBellY },
-                    ],
-                  }}
-                >
-                  <Ionicons name="notifications" size={28} color="#00E5FF" />
+                <Animated.View style={{ transform: [{ rotate: driverBellRot }] }}>
+                  <Ionicons name="notifications" size={24} color="#00E5FF" />
                 </Animated.View>
                 {(driverHasUnreadNotif || !!driverActiveBookingId) && (
                   <View style={nS.driverNotifDot}>
@@ -2824,7 +2823,12 @@ const MapScreen = () => {
               {!driverReservationsMinimized && (
                 <View style={nS.driverReservationsBody}>
                   <Text {...FIXED_TEXT_PROPS} numberOfLines={2} style={nS.driverConnectedSub}>Conectado y esperando solicitudes</Text>
-                  <DriverReservationsScreen embedded initialTab="immediate" />
+                  <DriverReservationsScreen
+                    embedded
+                    initialTab="immediate"
+                    pendingDetailBooking={pendingServiceDetail}
+                    onPendingDetailConsumed={() => setPendingServiceDetail(null)}
+                  />
                 </View>
               )}
             </View>
@@ -3232,18 +3236,16 @@ const MapScreen = () => {
         <DriverNotificationsModal
           visible={driverNotifModalVisible}
           onClose={() => setDriverNotifModalVisible(false)}
-          onOpenBookingDetail={(booking) => {
+          onOpenBookingDetail={(booking, opts) => {
             setDriverNotifModalVisible(false);
-            const type = String(booking?.booking_type || '').toLowerCase();
-            const tab = type.includes('reserv') ? 'reservations' : 'immediate';
-            try {
-              navigation.navigate(
-                'DriverReservations' as never,
-                { initialTab: tab, highlightBookingId: booking?.id } as never,
-              );
-            } catch (e) {
-              console.warn('[DriverNotificationsModal] navigate failed', e);
-            }
+            setDriverReservationsMinimized(false);
+            const item = {
+              ...(booking || {}),
+              ...(opts?.taken
+                ? { __taken: true, __expiresAt: opts.expiresAt }
+                : {}),
+            };
+            setPendingServiceDetail(item);
           }}
         />
       ) : null}
@@ -4894,11 +4896,14 @@ const nS = StyleSheet.create({
     overflow: 'hidden',
   },
   driverNotifBtn: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(5, 26, 38, 0.92)',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
   },
   driverNotifDot: {
     position: 'absolute',

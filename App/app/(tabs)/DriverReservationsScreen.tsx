@@ -129,6 +129,9 @@ type Reservation = {
 type DriverReservationsScreenProps = {
   embedded?: boolean;
   initialTab?: 'reservations' | 'immediate' | 'active';
+  /** Abre el modal "Detalle del servicio" (mismo que al pulsar Ver) sin navegar a otra pantalla */
+  pendingDetailBooking?: any | null;
+  onPendingDetailConsumed?: () => void;
 };
 
 const formatDate = (ts: string) => {
@@ -209,7 +212,12 @@ const getDistanceKm = (
   return earthRadiusKm * c;
 };
 
-const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp }: DriverReservationsScreenProps) => {
+const DriverReservationsScreen = ({
+  embedded = false,
+  initialTab: initialTabProp,
+  pendingDetailBooking = null,
+  onPendingDetailConsumed,
+}: DriverReservationsScreenProps) => {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
@@ -489,7 +497,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
         }
       }
 
-      // Reservas que desaparecieron del PENDING → si otro las tomó, fantasma 5 min
+      // Reservas que desaparecieron del PENDING → si otro las tomó, fantasma 3 min
       const prevList = lastPendingReservationsRef.current;
       const candidateIds = new Set<string>(prevList.map((p) => String(p.id)));
       try {
@@ -799,7 +807,7 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
         if (isImmediate) {
           searchImmediateServices();
         } else {
-          // Mantener visible 5 min como “tomada”
+          // Mantener visible 3 min como “tomada” (solo reservas)
           try {
             const fullUrl = `${SUPABASE_URL}/rest/v1/bookings?id=eq.${encodeURIComponent(reservation.id)}&select=*&limit=1`;
             const fullRes = await fetch(fullUrl, { headers });
@@ -1081,6 +1089,19 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
     setDetailEndpoints(null);
   };
 
+  // Abrir el mismo "Detalle del servicio" que el botón Ver (p. ej. desde campanita)
+  useEffect(() => {
+    if (!pendingDetailBooking) return;
+    const booking = pendingDetailBooking;
+    const type = String(booking?.booking_type || booking?.__noticeType || '').toLowerCase();
+    const tab: 'reservations' | 'immediate' | 'active' = type.includes('reserv')
+      ? 'reservations'
+      : 'immediate';
+    setActiveTab(tab);
+    openServiceDetail(booking);
+    onPendingDetailConsumed?.();
+  }, [pendingDetailBooking, openServiceDetail, onPendingDetailConsumed]);
+
   const renderItem = ({ item, index }: { item: any; index: number }) => {
     try {
     const fare = getBookingFareRange(item);
@@ -1201,7 +1222,12 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
       ? [
           ...reservations.map((r) => ({ ...r, __taken: false as const, __expiresAt: 0 })),
           ...takenGhosts
-            .filter((g) => g.expiresAt > nowTick)
+            .filter((g) => {
+              if (g.expiresAt <= nowTick) return false;
+              const bt = String((g.booking as any)?.booking_type || '').toLowerCase();
+              // Solo reservas permanecen 3 min; inmediatos no entran aquí
+              return !bt || bt.includes('reserv');
+            })
             .map((g) => ({
               ...(g.booking as any),
               __taken: true as const,
@@ -1665,9 +1691,6 @@ const DriverReservationsScreen = ({ embedded = false, initialTab: initialTabProp
                   <Ionicons name="information-circle" size={18} color="#FF8A80" />
                   <View style={{ flex: 1 }}>
                     <Text style={s.takenDetailTitle}>Ya la tomó otro conductor</Text>
-                    <Text style={s.takenDetailSub}>
-                      Desaparece en {formatCountdown(Math.max(0, Number(detailItem.__expiresAt || 0) - nowTick))}
-                    </Text>
                   </View>
                   <TouchableOpacity onPress={closeServiceDetail} style={s.takenCloseBtn}>
                     <Text style={s.takenCloseTxt}>Cerrar</Text>
