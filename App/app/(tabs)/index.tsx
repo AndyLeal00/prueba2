@@ -991,6 +991,7 @@ const MapScreen = () => {
   const [driverActiveBookingId, setDriverActiveBookingId] = useState<string | null>(null);
   const [driverNotifModalVisible, setDriverNotifModalVisible] = useState(false);
   const [pendingServiceDetail, setPendingServiceDetail] = useState<any | null>(null);
+  const [driverAvailableServiceCount, setDriverAvailableServiceCount] = useState(0);
   const driverLastBookingIdRef = useRef<string | null>(null);
   const driverBellAnim = useRef(new Animated.Value(0)).current;
 
@@ -1026,7 +1027,7 @@ const MapScreen = () => {
     return () => clearInterval(id);
   }, [isDriverView, driverHasUnreadNotif, driverActiveBookingId, shakeDriverBell]);
 
-  // Indicador verde: hay notificaciones de servicios pendientes en el modal
+  // Indicador verde: servicios disponibles (tab) o notificaciones guardadas
   useEffect(() => {
     if (!isDriverView) return;
     let cancelled = false;
@@ -1034,21 +1035,41 @@ const MapScreen = () => {
       try {
         const notices = await listServiceNotices();
         if (cancelled) return;
-        const hasFeed = (homeImmediateBookings?.length || 0) > 0;
-        if (notices.length > 0 || hasFeed) {
+        const availableNotices = notices.filter((n) => !n.takenExpiresAt).length;
+        const hasLive = driverAvailableServiceCount > 0;
+        if (availableNotices > 0 || hasLive || notices.length > 0) {
+          // notices.length incluye tomados aún visibles 3 min → también cuenta
           setDriverHasUnreadNotif(true);
         } else if (!driverActiveBookingId) {
           setDriverHasUnreadNotif(false);
         }
       } catch {}
     };
+    if (driverAvailableServiceCount > 0) {
+      setDriverHasUnreadNotif(true);
+    }
     checkNotices();
     const id = setInterval(checkNotices, 8000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [isDriverView, driverActiveBookingId, homeImmediateBookings?.length]);
+  }, [isDriverView, driverActiveBookingId, driverAvailableServiceCount]);
+
+  // Circulito verde al instante cuando el panel embebido reporta servicios
+  useEffect(() => {
+    if (!isDriverView) return;
+    if (driverAvailableServiceCount > 0) {
+      setDriverHasUnreadNotif(true);
+    } else if (!driverActiveBookingId) {
+      // Sin servicios vivos: el poll de notices decide si quedan avisos "tomados"
+      listServiceNotices()
+        .then((notices) => {
+          if (notices.length === 0) setDriverHasUnreadNotif(false);
+        })
+        .catch(() => {});
+    }
+  }, [isDriverView, driverAvailableServiceCount, driverActiveBookingId]);
 
   const refreshDriverActiveBooking = useCallback(async () => {
     if (!isDriverView) return;
@@ -2839,6 +2860,10 @@ const MapScreen = () => {
                     initialTab="immediate"
                     pendingDetailBooking={pendingServiceDetail}
                     onPendingDetailConsumed={() => setPendingServiceDetail(null)}
+                    onAvailableServicesChange={(counts) => {
+                      const total = (counts.immediate || 0) + (counts.reservation || 0);
+                      setDriverAvailableServiceCount(total);
+                    }}
                   />
                 </View>
               )}

@@ -132,6 +132,8 @@ type DriverReservationsScreenProps = {
   /** Abre el modal "Detalle del servicio" (mismo que al pulsar Ver) sin navegar a otra pantalla */
   pendingDetailBooking?: any | null;
   onPendingDetailConsumed?: () => void;
+  /** Cuenta de servicios disponibles (para campanita / punto verde del mapa) */
+  onAvailableServicesChange?: (counts: { immediate: number; reservation: number }) => void;
 };
 
 const formatDate = (ts: string) => {
@@ -217,6 +219,7 @@ const DriverReservationsScreen = ({
   initialTab: initialTabProp,
   pendingDetailBooking = null,
   onPendingDetailConsumed,
+  onAvailableServicesChange,
 }: DriverReservationsScreenProps) => {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
@@ -332,6 +335,15 @@ const DriverReservationsScreen = ({
   /* ── IDs ya vistos para notificar solo nuevos ── */
   const seenReservationIdsRef = useRef<Set<string> | null>(null);
   const seenImmediateIdsRef = useRef<Set<string> | null>(null);
+  const availableCountsRef = useRef({ immediate: 0, reservation: 0 });
+  const onAvailableServicesChangeRef = useRef(onAvailableServicesChange);
+  onAvailableServicesChangeRef.current = onAvailableServicesChange;
+
+  const emitAvailableCounts = useCallback((partial: { immediate?: number; reservation?: number }) => {
+    if (typeof partial.immediate === 'number') availableCountsRef.current.immediate = partial.immediate;
+    if (typeof partial.reservation === 'number') availableCountsRef.current.reservation = partial.reservation;
+    onAvailableServicesChangeRef.current?.({ ...availableCountsRef.current });
+  }, []);
   /* ── IDs de cancelaciones ya notificadas (evita repetir en ciclos sucesivos) ── */
   const notifiedCancelledIdsRef = useRef<Set<string>>(new Set());
 
@@ -451,6 +463,7 @@ const DriverReservationsScreen = ({
         const errText = await res.text();
         console.warn('❌ [RESERVAS] Fetch status:', res.status, errText);
         setReservations([]);
+        emitAvailableCounts({ reservation: 0 });
         return;
       }
       const data = await res.json();
@@ -473,28 +486,31 @@ const DriverReservationsScreen = ({
       }
       const currentIds = new Set<string>(list.map((it: any) => String(it.id)));
       const previous = seenReservationIdsRef.current;
-      if (previous) {
-        for (const it of list) {
-          if (!previous.has(String(it.id))) {
-            const pickup = it.pickup_address || 'punto desconocido';
-            const when = it.booking_date ? ` · ${formatDate(it.booking_date)}` : '';
-            notifyNewBooking(
-              '📅 Nueva reserva programada',
-              `Recogida: ${pickup}${when}`,
-              { bookingId: it.id, bookingType: 'reservation' },
-            ).catch(() => {});
-            recordServiceNotice({
-              bookingId: String(it.id),
-              bookingType: 'reservation',
-              title: 'Nueva reserva programada',
-              body: `Recogida: ${pickup}${when}`,
-              pickup: it.pickup_address,
-              drop: it.drop_address,
-              reference: it.reference,
-              bookingSnapshot: it,
-            }).catch(() => {});
-          }
+      const isFirstScan = previous === null;
+      for (const it of list) {
+        const id = String(it.id);
+        const isNew = isFirstScan || !previous!.has(id);
+        if (!isNew) continue;
+        const pickup = it.pickup_address || 'punto desconocido';
+        const when = it.booking_date ? ` · ${formatDate(it.booking_date)}` : '';
+        // Primera carga: solo registrar en modal (sin push spam). Después: notificar + registrar.
+        if (!isFirstScan) {
+          notifyNewBooking(
+            '📅 Nueva reserva programada',
+            `Recogida: ${pickup}${when}`,
+            { bookingId: it.id, bookingType: 'reservation' },
+          ).catch(() => {});
         }
+        recordServiceNotice({
+          bookingId: id,
+          bookingType: 'reservation',
+          title: 'Nueva reserva programada',
+          body: `Recogida: ${pickup}${when}`,
+          pickup: it.pickup_address,
+          drop: it.drop_address,
+          reference: it.reference,
+          bookingSnapshot: it,
+        }).catch(() => {});
       }
 
       // Reservas que desaparecieron del PENDING → si otro las tomó, fantasma 3 min
@@ -538,13 +554,14 @@ const DriverReservationsScreen = ({
       lastPendingReservationsRef.current = list;
       seenReservationIdsRef.current = currentIds;
       setReservations(list);
+      emitAvailableCounts({ reservation: list.length });
     } catch (e) {
       console.error('❌ Fetch reservations error:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeCarType]);
+  }, [activeCarType, emitAvailableCounts]);
 
   // Cargar fantasmas al montar + ticker de cuenta regresiva
   useEffect(() => {
@@ -586,6 +603,7 @@ const DriverReservationsScreen = ({
       if (!Array.isArray(allData)) {
         console.log('⚠️ ERROR: allData no es array:', typeof allData);
         setImmediateServices([]);
+        emitAvailableCounts({ immediate: 0 });
         return;
       }
       
@@ -594,6 +612,7 @@ const DriverReservationsScreen = ({
       if (!driverCarType) {
         console.log('[INMEDIATOS] Sin vehículo activo: no se muestran servicios.');
         setImmediateServices([]);
+        emitAvailableCounts({ immediate: 0 });
         return;
       }
 
@@ -629,35 +648,39 @@ const DriverReservationsScreen = ({
       
       console.log(`✅ [INMEDIATOS] Tras filtrar: NEW: ${newCount}, PENDING: ${pendingCount}, Total: ${filtered.length}, rangeKm: ${rangeKm}, driverCoords: ${driverCoords ? `${driverCoords.lat},${driverCoords.lng}` : 'N/A'}`);
 
-      // Notificar nuevos inmediatos (que no estaban en la lista anterior)
+      // Notificar / registrar inmediatos (primera carga también llena el modal de campanita)
       const currentIds = new Set<string>(filtered.map((it: any) => String(it.id)));
       const previous = seenImmediateIdsRef.current;
-      if (previous) {
-        for (const it of filtered as any[]) {
-          if (!previous.has(String(it.id))) {
-            const pickup = it.pickup_address || 'punto desconocido';
-            const distTxt = typeof it.distance_to_pickup_km === 'number'
-              ? ` · ${it.distance_to_pickup_km.toFixed(1)} km`
-              : '';
-            notifyNewBooking(
-              '⚡ Nuevo servicio inmediato',
-              `Recogida: ${pickup}${distTxt}`,
-              { bookingId: it.id, bookingType: 'immediate' },
-            ).catch(() => {});
-            recordServiceNotice({
-              bookingId: String(it.id),
-              bookingType: 'immediate',
-              title: 'Nuevo servicio inmediato',
-              body: `Recogida: ${pickup}${distTxt}`,
-              pickup: it.pickup_address,
-              drop: it.drop_address,
-              reference: it.reference,
-              bookingSnapshot: it,
-            }).catch(() => {});
-          }
+      const isFirstScan = previous === null;
+      for (const it of filtered as any[]) {
+        const id = String(it.id);
+        const isNew = isFirstScan || !previous!.has(id);
+        if (!isNew) continue;
+        const pickup = it.pickup_address || 'punto desconocido';
+        const distTxt = typeof it.distance_to_pickup_km === 'number'
+          ? ` · ${it.distance_to_pickup_km.toFixed(1)} km`
+          : '';
+        if (!isFirstScan) {
+          notifyNewBooking(
+            '⚡ Nuevo servicio inmediato',
+            `Recogida: ${pickup}${distTxt}`,
+            { bookingId: it.id, bookingType: 'immediate' },
+          ).catch(() => {});
         }
+        recordServiceNotice({
+          bookingId: id,
+          bookingType: 'immediate',
+          title: 'Nuevo servicio inmediato',
+          body: `Recogida: ${pickup}${distTxt}`,
+          pickup: it.pickup_address,
+          drop: it.drop_address,
+          reference: it.reference,
+          bookingSnapshot: it,
+        }).catch(() => {});
+      }
 
-        // Detectar servicios que desaparecieron porque el cliente canceló
+      // Detectar servicios que desaparecieron porque el cliente canceló
+      if (previous) {
         for (const prevId of previous) {
           if (!currentIds.has(prevId) && !notifiedCancelledIdsRef.current.has(prevId)) {
             const disappeared = allData.find((b: any) => String(b.id) === prevId);
@@ -681,13 +704,15 @@ const DriverReservationsScreen = ({
       seenImmediateIdsRef.current = currentIds;
 
       setImmediateServices(filtered);
+      emitAvailableCounts({ immediate: filtered.length });
     } catch (e) {
       console.error('❌ Search immediate services error:', e);
       setImmediateServices([]);
+      emitAvailableCounts({ immediate: 0 });
     } finally {
       setSearchingImmediate(false);
     }
-  }, [driverCoords, rangeKm, activeCarType]);
+  }, [driverCoords, rangeKm, activeCarType, emitAvailableCounts]);
 
   useEffect(() => {
     fetchReservations();
@@ -700,13 +725,14 @@ const DriverReservationsScreen = ({
   useEffect(() => {
     if (!driverOnline) {
       setImmediateServices([]);
+      emitAvailableCounts({ immediate: 0 });
       setSearchingImmediate(false);
       return;
     }
     searchImmediateServices();
     const interval = setInterval(searchImmediateServices, 10000);
     return () => clearInterval(interval);
-  }, [driverOnline, searchImmediateServices]);
+  }, [driverOnline, searchImmediateServices, emitAvailableCounts]);
 
   const handleAccept = async (reservation: Reservation) => {
     const isImmmediate = reservation.booking_type === 'immediate';

@@ -72,22 +72,10 @@ export async function recordServiceNotice(
     takenExpiresAt: null,
   };
   const prev = await readJson<ServiceNotice[]>(NOTICES_KEY, []);
-  // Evitar duplicados del mismo booking recientes (< 2 min) — conservar takenExpiresAt si existía
-  const existing = prev.find((n) => n.bookingId === notice.bookingId);
-  const filtered = prev.filter(
-    (n) =>
-      !(n.bookingId === notice.bookingId && Date.now() - n.createdAt < 120_000),
-  );
-  const merged: ServiceNotice = {
-    ...notice,
-    // Si ya estaba marcado como tomado, no perder el contador
-    takenExpiresAt: existing?.takenExpiresAt && existing.takenExpiresAt > Date.now()
-      ? existing.takenExpiresAt
-      : notice.takenExpiresAt,
-  };
-  const next = [merged, ...filtered.filter((n) => n.bookingId !== notice.bookingId)].slice(0, 80);
+  // Reemplazar aviso del mismo booking (servicio disponible de nuevo = limpio)
+  const next = [notice, ...prev.filter((n) => n.bookingId !== notice.bookingId)].slice(0, 80);
   await writeJson(NOTICES_KEY, next);
-  return merged;
+  return notice;
 }
 
 export async function listServiceNotices(): Promise<ServiceNotice[]> {
