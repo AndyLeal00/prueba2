@@ -8,8 +8,8 @@ import { FIXED_TEXT_PROPS } from '@/common/utils/typography';
 const ACCENT = '#00E5FF';
 const PICKUP = '#00E5FF';
 const DROP = '#E91E63';
-/** Por debajo de esto se considera llegado (alineado con formatDistanceAndEta VERY_CLOSE). */
-const CLOSE_KM = 0.2;
+/** Solo aquí se considera “llegó” al extremo de la barra (no el umbral de texto “muy cerca”). */
+const ARRIVED_KM = 0.04;
 
 export type TripProgressPhase = 'to_pickup' | 'at_pickup' | 'to_drop';
 
@@ -78,7 +78,7 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
 
   const dropSegmentKm = useMemo(() => {
     if (pickupLat == null || pickupLng == null || dropLat == null || dropLng == null) return null;
-    return Math.max(haversineKm(pickupLat, pickupLng, dropLat, dropLng), CLOSE_KM);
+    return Math.max(haversineKm(pickupLat, pickupLng, dropLat, dropLng), 0.12);
   }, [pickupLat, pickupLng, dropLat, dropLng]);
 
   const phaseKey = `${booking?.id || ''}:${phase}`;
@@ -102,13 +102,13 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
       return;
     }
 
-    // GPS ausente un momento: no reiniciar ni oscilar; conservar último valor
+    // GPS ausente un momento: conservar último valor (sin oscilar)
     if (liveRemainingKm == null) return;
 
     setDisplayRemainingKm(liveRemainingKm);
 
-    // Muy cerca → progreso completo (evita carrito a mitad con “Conductor muy cerca”)
-    if (liveRemainingKm <= CLOSE_KM) {
+    // Solo al extremo cuando está prácticamente encima del punto (~40 m)
+    if (liveRemainingKm <= ARRIVED_KM) {
       lastProgressRef.current = 1;
       setDisplayProgress(1);
       return;
@@ -121,27 +121,22 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
       next = 1 - liveRemainingKm / total;
     } else {
       if (approachBaselineRef.current == null) {
-        approachBaselineRef.current = Math.max(liveRemainingKm, CLOSE_KM);
-      } else if (liveRemainingKm > approachBaselineRef.current * 1.25) {
-        // Solo ampliar en desvío claro (umbral alto para no bailar con ruido GPS)
+        // Primera lectura: si ya viene cerca, no uses una base minúscula
+        // (evita saltos raros). Mínimo 300 m de recorrido de referencia.
+        approachBaselineRef.current = Math.max(liveRemainingKm, 0.3);
+      } else if (liveRemainingKm > approachBaselineRef.current * 1.2) {
         approachBaselineRef.current = liveRemainingKm;
       }
       next = 1 - liveRemainingKm / approachBaselineRef.current;
     }
 
-    next = Math.min(1, Math.max(0, next));
+    next = Math.min(0.98, Math.max(0, next)); // 0.98 máx hasta ARRIVED_KM
 
-    // Progreso monotónico suave: no retroceder por ruido GPS (salvo desvío grande)
+    // Suavizado + pequeño deadband anti-ruido (permite subir y bajar)
     const prev = lastProgressRef.current;
-    if (next + 0.04 < prev && liveRemainingKm > CLOSE_KM * 1.5) {
-      // Retroceso real posible (se alejó); permitir bajar un poco
-      next = Math.max(next, prev - 0.08);
-    } else {
-      next = Math.max(prev, next);
-    }
+    let smoothed = prev + (next - prev) * 0.45;
+    if (Math.abs(smoothed - prev) < 0.012) smoothed = prev;
 
-    // Suavizado: no saltar de golpe
-    const smoothed = prev + (next - prev) * 0.55;
     lastProgressRef.current = smoothed;
     setDisplayProgress(smoothed);
   }, [phase, liveRemainingKm, dropSegmentKm]);
