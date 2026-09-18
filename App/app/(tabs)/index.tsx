@@ -61,6 +61,7 @@ import MapCompassIcon from '@/components/MapCompassIcon';
 import { LinearGradient } from 'expo-linear-gradient';
 import DriverReservationsScreen from "./DriverReservationsScreen";
 import { ActiveTripBannerStack } from "@/components/ActiveTripFloatingBanner";
+import { useActiveTripBanner } from "@/hooks/useActiveTripBanner";
 import * as Speech from "expo-speech";
 import { useAppDispatch } from "../../common/store/hooks";
 import { updateUserProfile } from "@/common/reducers/authReducer";
@@ -968,6 +969,7 @@ const MapScreen = () => {
   const [mapViewMode, setMapViewMode] = useState<MapViewMode>('2D');
   const [mapTheme, setMapTheme] = useState<GoogleMapTheme>('dark');
   const [mapBearing, setMapBearing] = useState(0);
+  const { bookings: activeTripBookings, hasActiveTrip } = useActiveTripBanner();
   const driverReservationsExpandedHeight = Math.max(300, Math.round(screenHeight * 0.52));
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info' | 'confirm'>('error');
@@ -2493,24 +2495,33 @@ const MapScreen = () => {
   };
 
   const driverOfflinePanelHeight = 168;
+  // Altura extra del banner de viaje activo (GO desconectado) para no tapar controles del mapa
+  const offlineActiveBannerExtra = useMemo(() => {
+    if (driverOnline || !hasActiveTrip) return 0;
+    const count = Math.min(activeTripBookings.length, 4);
+    return count * 118;
+  }, [driverOnline, hasActiveTrip, activeTripBookings.length]);
+
   const driverServicesPanelHeight = useMemo(() => {
     if (!isDriverView || showNovedades) return 0;
     if (driverOnline) {
       return driverReservationsMinimized ? 108 : driverReservationsExpandedHeight;
     }
-    return driverOfflinePanelHeight;
+    return driverOfflinePanelHeight + offlineActiveBannerExtra;
   }, [
     isDriverView,
     showNovedades,
     driverOnline,
     driverReservationsMinimized,
     driverReservationsExpandedHeight,
+    offlineActiveBannerExtra,
   ]);
 
   const mapBottomPadding = isDriverView
     ? driverNavBottomPad - 12 + driverServicesPanelHeight
     : 0;
-  const mapControlsBottom = mapBottomPadding + 16;
+  // Empuja un poco más los controles laterales por encima del stack offline
+  const mapControlsBottom = mapBottomPadding + 16 + (offlineActiveBannerExtra > 0 ? 8 : 0);
 
   return (
     <View style={styles.container}>
@@ -4856,6 +4867,7 @@ const nS = StyleSheet.create({
     zIndex: 40,
     elevation: 40,
     gap: 8,
+    alignItems: 'center',
   },
   driverMiniPanel: {
     borderRadius: 18,
@@ -4864,6 +4876,7 @@ const nS = StyleSheet.create({
     backgroundColor: 'rgba(8,33,46,0.88)',
     paddingHorizontal: 14,
     paddingVertical: 12,
+    width: '100%',
   },
   driverMiniPanelTitle: {
     color: '#00E5FF',

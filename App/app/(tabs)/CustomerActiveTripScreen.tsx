@@ -1354,19 +1354,6 @@ const CustomerActiveTripScreen = () => {
               )}
 
               <View style={s.payContactBlock}>
-                {driverInfo?.mobile && (
-                  <View style={s.payContactRow}>
-                    <Ionicons name="call-outline" size={15} color="#00E5FF" />
-                    <Text style={s.payContactPhone}>{cleanNumberDisplay(driverInfo.mobile)}</Text>
-                    <TouchableOpacity
-                      onPress={() => Linking.openURL(`tel:${cleanNumberDisplay(driverInfo.mobile)}`)}
-                      style={{ paddingHorizontal: 6 }}
-                    >
-                      <Ionicons name="call" size={16} color="#00E676" />
-                    </TouchableOpacity>
-                  </View>
-                )}
-
                 {booking.payment_mode && (
                   <View style={s.payModeRow}>
                     <Ionicons
@@ -1426,8 +1413,8 @@ const CustomerActiveTripScreen = () => {
           </Animatable.View>
         )}
 
-        {/* OTP Countdown - Mostrar cuando timer está activo */}
-        {booking.otp_timer_started_at && (
+        {/* OTP Countdown - solo mientras espera el código */}
+        {booking.otp_timer_started_at && !booking.otp_verified && (
           <Animatable.View animation="fadeInUp" duration={450} delay={180} useNativeDriver>
             <OtpCountdownNotification 
               bookingId={bookingId}
@@ -1436,85 +1423,6 @@ const CustomerActiveTripScreen = () => {
             />
           </Animatable.View>
         )}
-
-        {/* Verification Status */}
-        {booking.otp_verified && (
-          <Animatable.View animation="fadeInUp" duration={450} useNativeDriver>
-            <View style={[s.card, s.verifiedCard]}>
-              <Ionicons name="checkmark-circle" size={32} color="#00E676" />
-              <Text style={s.verifiedText}>Viaje Verificado</Text>
-              <Text style={s.verifiedSub}>Tu viaje será iniciado próximamente</Text>
-            </View>
-          </Animatable.View>
-        )}
-
-        {/* Información de Viaje - Durante TRIP_STARTED */}
-        {(booking.status === 'IN_PROGRESS' || booking.status === 'STARTED' || booking.status === 'TRIP_STARTED') ? (
-          <Animatable.View animation="fadeInUp" duration={450} useNativeDriver>
-            <View style={s.card}>
-              <Text style={s.sectionTitle}>Información de tu Viaje</Text>
-
-              {/* Teléfono del Conductor */}
-              {driverInfo?.mobile && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-                  <Ionicons name="call-outline" size={16} color="#00E5FF" style={{ marginRight: 10 }} />
-                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, flex: 1 }}>Conductor: {cleanNumberDisplay(driverInfo.mobile)}</Text>
-                  <TouchableOpacity 
-                    onPress={() => Linking.openURL(`tel:${cleanNumberDisplay(driverInfo.mobile)}`)}
-                    style={{ paddingHorizontal: 8 }}
-                  >
-                    <Ionicons name="call" size={18} color="#00E676" />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Divider */}
-              <View style={{ height: 1, backgroundColor: 'rgba(0,244,245,0.2)', marginBottom: 14 }} />
-
-              {/* Método de Pago */}
-              {booking.payment_mode && (
-                <View style={{ marginBottom: 14 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Ionicons 
-                      name={booking.payment_mode === 'cash' ? 'cash-outline' : booking.payment_mode === 'nequi' ? 'phone-portrait-outline' : 'wallet-outline'} 
-                      size={16} 
-                      color="#00E5FF" 
-                      style={{ marginRight: 10 }} 
-                    />
-                    <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '600' }}>
-                      {booking.payment_mode === 'cash' ? 'Pago en Efectivo' : booking.payment_mode === 'nequi' ? 'Pago por Nequi' : 'Pago por Daviplata'}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Número para Transferencia (Nequi/Daviplata) */}
-              {(booking.payment_mode === 'nequi' || booking.payment_mode === 'daviplata') && (driverInfo?.mobile || booking.driver_payment_number || driverInfo?.bankAccount) && (
-                <View style={{ backgroundColor: 'rgba(0,244,245,0.08)', borderRadius: 8, padding: 12, borderLeftWidth: 3, borderLeftColor: '#00E5FF' }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 8 }}>
-                    Transferir a este número:
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={{ color: '#00F4F5', fontSize: 16, fontWeight: '700', letterSpacing: 2 }}>
-                      {driverInfo?.mobile || booking.driver_payment_number || driverInfo?.bankAccount}
-                    </Text>
-                    <TouchableOpacity 
-                      onPress={() => {
-                        const number = driverInfo?.mobile || booking.driver_payment_number || driverInfo?.bankAccount;
-                        if (number) {
-                          handleCopyNumber(number);
-                        }
-                      }}
-                      style={{ paddingHorizontal: 8 }}
-                    >
-                      <Ionicons name="copy-outline" size={18} color="#00E5FF" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
-          </Animatable.View>
-        ) : null}
 
         {/* Cancelar viaje — al final del scroll, solo antes de llegada del conductor */}
         {(() => {

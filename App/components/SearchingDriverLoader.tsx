@@ -76,10 +76,11 @@ const SearchingDriverLoader: React.FC<Props> = ({
   }, [ring1, ring2, ring3, carPulse]);
 
   const ringStyle = (val: Animated.Value) => ({
-    opacity: val.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0.55, 0.35, 0] }),
+    opacity: val.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.6, 0.4, 0] }),
     transform: [
       {
-        scale: val.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1.55] }),
+        // Escala contenida para que las ondas no se salgan de la card
+        scale: val.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1.05] }),
       },
     ],
   });
@@ -118,8 +119,11 @@ const SearchingDriverLoader: React.FC<Props> = ({
         <Animated.View style={[styles.ring, ringStyle(ring1)]} />
         <Animated.View style={[styles.ring, ringStyle(ring2)]} />
         <Animated.View style={[styles.ring, ringStyle(ring3)]} />
-        <Animated.View style={[styles.carOrb, { transform: [{ scale: carScale }] }]}>
-          <FontAwesome5 name="car" size={22} color="#001824" />
+        <Animated.View style={[styles.carOrbWrap, { transform: [{ scale: carScale }] }]}>
+          <View style={styles.carOrbHalo} />
+          <View style={styles.carOrb}>
+            <FontAwesome5 name="car" size={20} color="#001824" />
+          </View>
         </Animated.View>
       </View>
 
@@ -176,38 +180,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: 'rgba(10,46,61,0.78)',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,179,0,0.45)',
+    borderColor: 'rgba(0,229,255,0.45)',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   radarWrap: {
-    width: 140,
-    height: 140,
+    width: 112,
+    height: 112,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+    overflow: 'hidden',
   },
   ring: {
     position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 2,
-    borderColor: '#FFB300',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 1.5,
+    borderColor: '#00E5FF',
+  },
+  carOrbWrap: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Halo circular (evita la sombra cuadrada de elevation en Android)
+  carOrbHalo: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0,229,255,0.28)',
   },
   carOrb: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#00E5FF',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.35)',
-    shadowColor: '#00E5FF',
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
+    borderColor: 'rgba(255,255,255,0.45)',
   },
   titleRow: {
     flexDirection: 'row',
@@ -226,7 +241,7 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
   dot: {
-    color: '#FFB300',
+    color: '#00E5FF',
     fontSize: 22,
     fontWeight: '900',
     lineHeight: 22,
@@ -244,7 +259,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingTop: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,179,0,0.2)',
+    borderTopColor: 'rgba(0,229,255,0.2)',
     gap: 10,
   },
   metaRow: {

@@ -17,6 +17,7 @@ import {
   isReservationBookingType,
   type ActiveTripBannerBooking,
 } from '@/hooks/useActiveTripBanner';
+import TripProgressLoader from '@/components/TripProgressLoader';
 
 const ACCENT = '#00E5FF';
 const ACTIVE_GREEN = '#00E676';
@@ -62,7 +63,7 @@ function findNavigatorWithRoute(navigation: any, routeName: string): any | null 
   return null;
 }
 
-export type BannerVariant = 'default' | 'profile' | 'list';
+export type BannerVariant = 'default' | 'profile' | 'list' | 'driverGo';
 export type BannerTripFilter = 'all' | 'immediate' | 'reservation';
 
 type BannerCardProps = {
@@ -75,6 +76,8 @@ type BannerCardProps = {
 function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }: BannerCardProps) {
   const isProfile = variant === 'profile';
   const isList = variant === 'list';
+  const isDriverGo = variant === 'driverGo';
+  const isCompact = isProfile || isList || isDriverGo;
 
   const counterpartName = useMemo(() => {
     if (isDriver) {
@@ -101,11 +104,11 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
 
   const pickup = truncateAddress(
     (booking.pickup_address as string) || undefined,
-    isProfile ? 28 : 34,
+    isDriverGo ? 26 : isProfile ? 28 : 34,
   );
   const dropoff = truncateAddress(
     (booking.drop_address as string) || undefined,
-    isProfile ? 28 : 34,
+    isDriverGo ? 26 : isProfile ? 28 : 34,
   );
   const whenLabel = formatReservationWhen(booking);
 
@@ -139,6 +142,7 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
         styles.card,
         isProfile && styles.cardProfile,
         isList && styles.cardList,
+        isDriverGo && styles.cardDriverGo,
       ]}
       onPress={openTrip}
       activeOpacity={0.88}
@@ -186,6 +190,12 @@ function BannerCard({ booking, isDriver, stackNavigation, variant = 'default' }:
           </Text>
         </View>
       </View>
+
+      <TripProgressLoader
+        booking={booking}
+        compact={isCompact}
+        role={isDriver ? 'driver' : 'customer'}
+      />
     </TouchableOpacity>
   );
 }
@@ -297,7 +307,7 @@ export function ActiveTripBannerStack({
           booking={booking}
           isDriver={isDriver}
           stackNavigation={stackNavigation}
-          variant="profile"
+          variant={isDriver ? 'driverGo' : 'profile'}
         />
       ))}
     </View>
@@ -354,6 +364,16 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 320,
     alignSelf: 'center',
+  },
+  cardDriverGo: {
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(5, 26, 38, 0.94)',
+    width: '68%',
+    maxWidth: 268,
+    alignSelf: 'center',
+    borderColor: 'rgba(0, 229, 255, 0.4)',
   },
   cardList: {
     borderRadius: 12,

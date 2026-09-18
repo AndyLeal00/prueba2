@@ -511,7 +511,7 @@ const ProfileScreen = ({ navigation }: Props) => {
   const driverNavPad = useDriverNavBottomPad();
   const { hasActiveTrip } = useActiveTripBanner();
   // Solo cliente usa banner flotante en Perfil; conductor solo en GO.
-  const bannerClearance = isCustomer && hasActiveTrip ? 108 : 0;
+  const bannerClearance = isCustomer && hasActiveTrip ? 148 : 0;
   const navBottomPad = (isCustomer ? customerNavPad : isDriverUser ? driverNavPad : 36) + bannerClearance;
 
   const profilePhoto =

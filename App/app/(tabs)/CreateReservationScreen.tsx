@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   Platform, ActivityIndicator, Dimensions, Keyboard, KeyboardAvoidingView,
@@ -44,7 +44,14 @@ const animateChipSelect = () => {
 
 const GOOGLE_MAPS_KEY = API_KEY;
 
-type VehicleType = { key: string; label: string; icon: 'car-sport' | 'car' | 'bus' | 'car-outline' };
+type VehicleType = {
+  key: string;
+  label: string;
+  icon: 'car-sport' | 'car' | 'bus' | 'car-outline';
+  description: string;
+  /** URL de imagen desde car_types.image (DB) */
+  imageUri: string;
+};
 
 const VEHICLE_ICON_MAP: Record<string, VehicleType['icon']> = {
   ConfortPlus: 'car-sport',
@@ -53,15 +60,25 @@ const VEHICLE_ICON_MAP: Record<string, VehicleType['icon']> = {
   TaxiPlus:    'car-outline',
 };
 
-// Fallback mientras Supabase carga — valores reales de car_types
+/** Orden fijo en UI; categorías nuevas de la DB se agregan al final (scroll horizontal). */
+const VEHICLE_DISPLAY_ORDER = ['XPlus', 'ConfortPlus', 'VanPlus', 'TaxiPlus'] as const;
+
+/** Ancho de card: caben ~4 visibles; la 5ª+ se alcanza con scroll a la derecha. */
+const VEHICLE_CARD_GAP = 8;
+const VEHICLE_ROW_H_PAD = 0;
+const VEHICLE_CARD_W = Math.floor(
+  (SW - 32 - VEHICLE_ROW_H_PAD * 2 - VEHICLE_CARD_GAP * 3) / 4,
+);
+
+// Fallback mientras Supabase carga — sin descripción/imagen hasta que llegue de car_types
 const DEFAULT_VEHICLE_TYPES: VehicleType[] = [
-  { key: 'ConfortPlus', label: 'ConfortPlus', icon: 'car-sport' },
-  { key: 'XPlus',       label: 'XPlus',       icon: 'car'       },
-  { key: 'VanPlus',     label: 'VanPlus',     icon: 'bus'       },
-  { key: 'TaxiPlus',    label: 'TaxiPlus',    icon: 'car-outline'},
+  { key: 'XPlus',       label: 'XPlus',       icon: 'car',        description: '', imageUri: '' },
+  { key: 'ConfortPlus', label: 'ConfortPlus', icon: 'car-sport',  description: '', imageUri: '' },
+  { key: 'VanPlus',     label: 'VanPlus',     icon: 'bus',        description: '', imageUri: '' },
+  { key: 'TaxiPlus',    label: 'TaxiPlus',    icon: 'car-outline',description: '', imageUri: '' },
 ];
 
-/** Imágenes de categoría (mismas que carScreen) */
+/** Fallback local si car_types.image está vacío */
 const VEHICLE_CATEGORY_IMAGES: Record<string, any> = {
   XPlus: require('@/assets/images/TREAS-X.png'),
   ConfortPlus: require('@/assets/images/TREAS-E.png'),
@@ -391,7 +408,7 @@ const CreateReservationScreen = () => {
       try {
         const { data, error } = await supabase
           .from('car_types')
-          .select('name,base_price,base_price_inter,price_per_km,price_per_km_inter,rate_per_hour,rate_per_hour_inter,valor_hora,min_fare,min_fare_inter,delta_aeropuerto,delta_aeropuerto_prog,convenience_fee,convenience_fee_type,umbral_intermunicipal_km')
+          .select('name,description,image,base_price,base_price_inter,price_per_km,price_per_km_inter,rate_per_hour,rate_per_hour_inter,valor_hora,min_fare,min_fare_inter,delta_aeropuerto,delta_aeropuerto_prog,convenience_fee,convenience_fee_type,umbral_intermunicipal_km')
           .eq('is_active', true)
           .order('created_at', { ascending: true });
         if (error || !data?.length) return;
@@ -420,12 +437,22 @@ const CreateReservationScreen = () => {
             key: car.name,
             label: car.name,
             icon: VEHICLE_ICON_MAP[car.name] ?? 'car',
+            description: String(car.description ?? '').trim(),
+            imageUri: String(car.image ?? '').trim(),
           });
         });
 
+        // Orden estable: conocidos primero; categorías nuevas al final (created_at).
+        const known = VEHICLE_DISPLAY_ORDER
+          .map((name) => types.find((t) => t.key === name))
+          .filter((t): t is VehicleType => !!t);
+        const unknown = types.filter(
+          (t) => !(VEHICLE_DISPLAY_ORDER as readonly string[]).includes(t.key),
+        );
+
         setVehicleRates(rates);
-        setVehicleTypes(types);
-        setCarType(prev => (prev && rates[prev] ? prev : types[0]?.key ?? ''));
+        setVehicleTypes([...known, ...unknown]);
+        setCarType(prev => (prev && rates[prev] ? prev : known[0]?.key ?? unknown[0]?.key ?? ''));
       } catch (e) {
         console.warn('[CreateReservation] Error cargando tarifas:', e);
       }
@@ -632,6 +659,37 @@ const CreateReservationScreen = () => {
     setDriverPrice(totalCost);
     setClientPrice(clientTotal);
   }, [distance, duration, carType, vehicleRates, tripType, serviceType, origin, destination]);
+
+  /** Rango de precio por categoría (mismo cálculo que el pill de método de pago). */
+  const vehicleFareRanges = useMemo(() => {
+    const empty: Record<string, { low: number; high: number }> = {};
+    if (!distance || !duration) return empty;
+
+    const mult = tripType === 'Ida y Vuelta' ? 2 : 1;
+    const oAir = origin && (origin as any).latitude != null
+      ? isNearAirport((origin as any).latitude, (origin as any).longitude) : null;
+    const dAir = destination && (destination as any).latitude != null
+      ? isNearAirport((destination as any).latitude, (destination as any).longitude) : null;
+    const isAirport = !!(oAir || dAir);
+    const isScheduled = serviceType === 'reservation';
+
+    const ranges: Record<string, { low: number; high: number }> = {};
+    Object.keys(vehicleRates).forEach((key) => {
+      const rates = vehicleRates[key];
+      if (!rates) return;
+      const isIntermunicipal = distance > (rates.umbral_intermunicipal_km || DEFAULT_UMBRAL_INTERMUNICIPAL_KM);
+      const { totalCost, clientTotal } = FareCalculator(
+        distance * mult,
+        duration * 60 * mult,
+        rates,
+        null,
+        2,
+        { isAirport, isScheduled, isIntermunicipal },
+      );
+      ranges[key] = { low: totalCost, high: clientTotal };
+    });
+    return ranges;
+  }, [distance, duration, vehicleRates, tripType, serviceType, origin, destination]);
 
   useEffect(() => {
     if (!origin?.latitude || !destination?.latitude) {
@@ -1963,10 +2021,19 @@ const CreateReservationScreen = () => {
 
                   {/* Vehículo de preferencia */}
                   <Text style={st.label}>Selecciona Vehiculo De Preferencia</Text>
-                  <View style={st.vehicleRow}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    nestedScrollEnabled
+                    contentContainerStyle={st.vehicleRow}
+                  >
                     {vehicleTypes.map(v => {
-                      const img = VEHICLE_CATEGORY_IMAGES[v.key];
                       const active = carType === v.key;
+                      const fare = vehicleFareRanges[v.key];
+                      const desc = v.description;
+                      const imgSource = v.imageUri
+                        ? { uri: v.imageUri }
+                        : VEHICLE_CATEGORY_IMAGES[v.key] || null;
                       return (
                         <TouchableOpacity
                           key={v.key}
@@ -1976,9 +2043,9 @@ const CreateReservationScreen = () => {
                         >
                           <BlurView intensity={active ? 30 : 16} tint="dark" style={st.segBlur} />
                           <View style={st.vehicleBtnInner}>
-                            {img ? (
+                            {imgSource ? (
                               <Image
-                                source={img}
+                                source={imgSource}
                                 style={[st.vehicleImg, active && st.vehicleImgActive]}
                                 resizeMode="contain"
                               />
@@ -1988,11 +2055,29 @@ const CreateReservationScreen = () => {
                             <Text style={[st.vehicleTxt, active && st.vehicleTxtActive]} numberOfLines={1}>
                               {v.label}
                             </Text>
+                            <Text
+                              style={[st.vehicleDesc, active && st.vehicleDescActive]}
+                              numberOfLines={2}
+                            >
+                              {desc || ' '}
+                            </Text>
+                            {fare ? (
+                              <View style={[st.vehiclePricePill, active && st.vehiclePricePillActive]}>
+                                <Text
+                                  style={st.vehiclePriceTxt}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.6}
+                                >
+                                  {`$ ${fare.low.toLocaleString('es-CO')} – $ ${fare.high.toLocaleString('es-CO')}`}
+                                </Text>
+                              </View>
+                            ) : null}
                           </View>
                         </TouchableOpacity>
                       );
                     })}
-                  </View>
+                  </ScrollView>
 
                   {/* Observaciones */}
                   <Text style={st.label}>Observaciones (Opcional)</Text>
@@ -2687,11 +2772,12 @@ const st = StyleSheet.create({
   dynChipTxt: { flexShrink: 1, fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
   vehicleRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: VEHICLE_CARD_GAP,
+    paddingRight: 4,
   },
   vehicleBtn: {
-    flex: 1,
-    minHeight: 88,
+    width: VEHICLE_CARD_W,
+    minHeight: 118,
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
@@ -2705,14 +2791,16 @@ const st = StyleSheet.create({
   vehicleBtnInner: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
+    justifyContent: 'flex-start',
+    gap: 3,
+    paddingTop: 6,
+    paddingBottom: 8,
     paddingHorizontal: 4,
   },
   vehicleImg: {
-    width: 58,
-    height: 42,
+    width: 52,
+    height: 36,
+    marginTop: 0,
     opacity: 0.95,
   },
   vehicleImgActive: {
@@ -2723,9 +2811,44 @@ const st = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(255,255,255,0.5)',
     textAlign: 'center',
+    marginTop: 1,
   },
   vehicleTxtActive: {
     color: '#00E5FF',
+  },
+  vehicleDesc: {
+    fontSize: 8,
+    fontWeight: '500',
+    lineHeight: 10,
+    minHeight: 20, // siempre 2 líneas → precios alineados
+    color: 'rgba(255,255,255,0.38)',
+    textAlign: 'center',
+    paddingHorizontal: 2,
+  },
+  vehicleDescActive: {
+    color: 'rgba(0,229,255,0.72)',
+  },
+  vehiclePricePill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 'auto',
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,229,255,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,229,255,0.35)',
+    maxWidth: '100%',
+  },
+  vehiclePricePillActive: {
+    backgroundColor: 'rgba(0,229,255,0.18)',
+    borderColor: 'rgba(0,229,255,0.5)',
+  },
+  vehiclePriceTxt: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#00E5FF',
+    textAlign: 'center',
   },
   tripRow: { flexDirection: 'row', gap: 10 },
   tripBtn: {
