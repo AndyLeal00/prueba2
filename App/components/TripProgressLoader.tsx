@@ -8,6 +8,8 @@ import { FIXED_TEXT_PROPS } from '@/common/utils/typography';
 const ACCENT = '#00E5FF';
 const PICKUP = '#00E5FF';
 const DROP = '#E91E63';
+/** Por debajo de esto se considera llegado (alineado con formatDistanceAndEta VERY_CLOSE). */
+const CLOSE_KM = 0.2;
 
 export type TripProgressPhase = 'to_pickup' | 'at_pickup' | 'to_drop';
 
@@ -20,8 +22,6 @@ type BookingLike = {
   pickup_lng?: number | string | null;
   drop_lat?: number | string | null;
   drop_lng?: number | string | null;
-  trip_distance?: number | string | null;
-  distance?: number | string | null;
 };
 
 function num(v: unknown): number | null {
@@ -44,15 +44,13 @@ export function resolveTripProgressPhase(booking?: BookingLike | null): TripProg
 type Props = {
   booking: BookingLike;
   compact?: boolean;
-  /** Ajusta textos: cliente vs conductor */
   role?: 'customer' | 'driver';
 };
 
 /**
- * Barra de progreso del viaje para el banner:
- * - ACCEPTED: carrito avanza hacia el punto de recogida
- * - ARRIVED: carrito al 100% en recogida
- * - STARTED / otp verificado: carrito avanza hacia el destino
+ * Barra de progreso del banner.
+ * Misma fuente de posición que el mapa (booking_tracking), pero sin animación
+ * indeterminada: si el GPS parpadea, se mantiene el último progreso válido.
  */
 const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'customer' }) => {
   const phase = resolveTripProgressPhase(booking);
@@ -66,56 +64,87 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
   const target = useMemo(() => {
     if (phase === 'to_drop') {
       if (dropLat == null || dropLng == null) return null;
-      return { lat: dropLat, lng: dropLng, kind: 'drop' as const };
+      return { lat: dropLat, lng: dropLng };
     }
     if (pickupLat == null || pickupLng == null) return null;
-    return { lat: pickupLat, lng: pickupLng, kind: 'pickup' as const };
+    return { lat: pickupLat, lng: pickupLng };
   }, [phase, pickupLat, pickupLng, dropLat, dropLng]);
 
-  const remainingKm = useMemo(() => {
+  const liveRemainingKm = useMemo(() => {
     if (phase === 'at_pickup') return 0;
     if (!driverPosition || !target) return null;
     return haversineKm(driverPosition.lat, driverPosition.lng, target.lat, target.lng);
   }, [driverPosition, target, phase]);
 
-  // Longitud del tramo pickup→destino (misma métrica haversine que remaining).
-  // Evita mezclar trip_distance (ruta vial) con distancia lineal → progreso falso ~50%.
   const dropSegmentKm = useMemo(() => {
     if (pickupLat == null || pickupLng == null || dropLat == null || dropLng == null) return null;
-    return Math.max(haversineKm(pickupLat, pickupLng, dropLat, dropLng), 0.12);
+    return Math.max(haversineKm(pickupLat, pickupLng, dropLat, dropLng), CLOSE_KM);
   }, [pickupLat, pickupLng, dropLat, dropLng]);
 
   const phaseKey = `${booking?.id || ''}:${phase}`;
-  const [approachBaselineKm, setApproachBaselineKm] = useState<number | null>(null);
+  const approachBaselineRef = useRef<number | null>(null);
+  const lastProgressRef = useRef(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
+  const [displayRemainingKm, setDisplayRemainingKm] = useState<number | null>(null);
 
   useEffect(() => {
-    setApproachBaselineKm(null);
-  }, [phaseKey]);
+    approachBaselineRef.current = null;
+    lastProgressRef.current = phase === 'at_pickup' ? 1 : 0;
+    setDisplayProgress(phase === 'at_pickup' ? 1 : 0);
+    setDisplayRemainingKm(phase === 'at_pickup' ? 0 : null);
+  }, [phaseKey, phase]);
 
   useEffect(() => {
-    if (phase !== 'to_pickup' || remainingKm == null || remainingKm < 0.02) return;
-    setApproachBaselineKm((prev) => {
-      if (prev == null) return Math.max(remainingKm, 0.15);
-      // Solo amplía si se aleja (desvío), nunca reduce
-      if (remainingKm > prev * 1.12) return remainingKm;
-      return prev;
-    });
-  }, [phase, remainingKm]);
-
-  const progress = useMemo(() => {
-    if (phase === 'at_pickup') return 1;
-    if (remainingKm == null) return null;
-
-    if (phase === 'to_drop') {
-      const total = dropSegmentKm;
-      if (total == null || total <= 0) return null;
-      // Al arrancar, remaining ≈ distancia pickup→drop → progreso cerca de 0
-      return Math.min(1, Math.max(0, 1 - remainingKm / total));
+    if (phase === 'at_pickup') {
+      lastProgressRef.current = 1;
+      setDisplayProgress(1);
+      setDisplayRemainingKm(0);
+      return;
     }
 
-    if (approachBaselineKm == null || approachBaselineKm <= 0) return null;
-    return Math.min(1, Math.max(0, 1 - remainingKm / approachBaselineKm));
-  }, [phase, remainingKm, dropSegmentKm, approachBaselineKm]);
+    // GPS ausente un momento: no reiniciar ni oscilar; conservar último valor
+    if (liveRemainingKm == null) return;
+
+    setDisplayRemainingKm(liveRemainingKm);
+
+    // Muy cerca → progreso completo (evita carrito a mitad con “Conductor muy cerca”)
+    if (liveRemainingKm <= CLOSE_KM) {
+      lastProgressRef.current = 1;
+      setDisplayProgress(1);
+      return;
+    }
+
+    let next = 0;
+    if (phase === 'to_drop') {
+      const total = dropSegmentKm;
+      if (total == null || total <= 0) return;
+      next = 1 - liveRemainingKm / total;
+    } else {
+      if (approachBaselineRef.current == null) {
+        approachBaselineRef.current = Math.max(liveRemainingKm, CLOSE_KM);
+      } else if (liveRemainingKm > approachBaselineRef.current * 1.25) {
+        // Solo ampliar en desvío claro (umbral alto para no bailar con ruido GPS)
+        approachBaselineRef.current = liveRemainingKm;
+      }
+      next = 1 - liveRemainingKm / approachBaselineRef.current;
+    }
+
+    next = Math.min(1, Math.max(0, next));
+
+    // Progreso monotónico suave: no retroceder por ruido GPS (salvo desvío grande)
+    const prev = lastProgressRef.current;
+    if (next + 0.04 < prev && liveRemainingKm > CLOSE_KM * 1.5) {
+      // Retroceso real posible (se alejó); permitir bajar un poco
+      next = Math.max(next, prev - 0.08);
+    } else {
+      next = Math.max(prev, next);
+    }
+
+    // Suavizado: no saltar de golpe
+    const smoothed = prev + (next - prev) * 0.55;
+    lastProgressRef.current = smoothed;
+    setDisplayProgress(smoothed);
+  }, [phase, liveRemainingKm, dropSegmentKm]);
 
   const meta = useMemo(() => {
     if (phase === 'at_pickup') {
@@ -124,7 +153,7 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
         detail: role === 'driver' ? 'Esperando código' : 'Confirma el código para iniciar',
       };
     }
-    if (remainingKm == null) {
+    if (displayRemainingKm == null) {
       return {
         label:
           phase === 'to_drop'
@@ -135,7 +164,7 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
         detail: 'Localizando…',
       };
     }
-    const { distanciaTexto, etaTexto } = formatDistanceAndEta(remainingKm);
+    const { distanciaTexto, etaTexto } = formatDistanceAndEta(displayRemainingKm);
     return {
       label:
         phase === 'to_drop'
@@ -145,18 +174,27 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
             : 'Hacia la recogida',
       detail: `${distanciaTexto} · ~${etaTexto}`,
     };
-  }, [phase, remainingKm, role]);
+  }, [phase, displayRemainingKm, role]);
 
   const [trackW, setTrackW] = useState(0);
   const carX = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
-  const indeterminate = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
-        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.quad),
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 900,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.quad),
+        }),
       ]),
     );
     loop.start();
@@ -164,50 +202,16 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
   }, [pulse]);
 
   useEffect(() => {
-    if (progress != null || trackW <= 0) {
-      indeterminate.stopAnimation();
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(indeterminate, {
-          toValue: 1,
-          duration: 1400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(indeterminate, {
-          toValue: 0,
-          duration: 1400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [progress, trackW, indeterminate]);
-
-  useEffect(() => {
     if (trackW <= 0) return;
     const carSize = 22;
     const maxX = Math.max(0, trackW - carSize);
-    if (progress == null) {
-      // Indeterminado: oscila en el centro
-      const mid = maxX * 0.35;
-      const range = maxX * 0.3;
-      const id = indeterminate.addListener(({ value }) => {
-        carX.setValue(mid + value * range);
-      });
-      return () => indeterminate.removeListener(id);
-    }
     Animated.timing(carX, {
-      toValue: maxX * progress,
-      duration: 650,
+      toValue: maxX * displayProgress,
+      duration: 420,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [progress, trackW, carX, indeterminate]);
+  }, [displayProgress, trackW, carX]);
 
   const onTrackLayout = (e: LayoutChangeEvent) => {
     setTrackW(e.nativeEvent.layout.width);
@@ -215,6 +219,7 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
 
   const endColor = phase === 'to_drop' ? DROP : PICKUP;
   const fillOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.7] });
+  const fillWidth = trackW > 0 ? Math.max(4, trackW * displayProgress) : 4;
 
   return (
     <View style={[styles.wrap, compact && styles.wrapCompact]}>
@@ -236,26 +241,17 @@ const TripProgressLoader: React.FC<Props> = ({ booking, compact, role = 'custome
         <View style={[styles.endpoint, { backgroundColor: PICKUP }]} />
         <View style={styles.track} onLayout={onTrackLayout}>
           <View style={styles.trackBg} />
-          {progress != null && trackW > 0 ? (
-            <Animated.View
-              style={[
-                styles.trackFill,
-                {
-                  width: Math.max(4, trackW * progress),
-                  backgroundColor: endColor,
-                  opacity: fillOpacity,
-                },
-              ]}
-            />
-          ) : (
-            <Animated.View style={[styles.trackFillSoft, { opacity: fillOpacity }]} />
-          )}
           <Animated.View
             style={[
-              styles.carChip,
-              { transform: [{ translateX: carX }] },
+              styles.trackFill,
+              {
+                width: fillWidth,
+                backgroundColor: endColor,
+                opacity: fillOpacity,
+              },
             ]}
-          >
+          />
+          <Animated.View style={[styles.carChip, { transform: [{ translateX: carX }] }]}>
             <FontAwesome5 name="car" size={10} color="#001824" />
           </Animated.View>
         </View>
@@ -320,14 +316,6 @@ const styles = StyleSheet.create({
     left: 0,
     height: 3,
     borderRadius: 2,
-  },
-  trackFillSoft: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(0,229,255,0.35)',
   },
   carChip: {
     position: 'absolute',
