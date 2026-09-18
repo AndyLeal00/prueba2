@@ -252,6 +252,16 @@ const CustomerHomeScreen = () => {
     nav.navigate('Notifications');
   }, [shakeBell, nav]);
 
+  // Misma animación de clic, cada 3.5s solo si hay punto verde / notificaciones
+  useEffect(() => {
+    const hasNotif = hasUnread || !!activeBookingId;
+    if (!hasNotif) return;
+    const id = setInterval(() => {
+      shakeBell();
+    }, 3500);
+    return () => clearInterval(id);
+  }, [hasUnread, activeBookingId, shakeBell]);
+
   // ── Fetch active booking to know if there are ongoing notifications ──
   const refreshActiveBooking = useCallback(async () => {
     try {
@@ -548,8 +558,8 @@ const s = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     backgroundColor: 'rgba(5, 26, 38, 0.92)',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#00E5FF',
     justifyContent: 'center',
     alignItems: 'center',
   },

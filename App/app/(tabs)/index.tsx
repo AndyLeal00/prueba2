@@ -1015,6 +1015,17 @@ const MapScreen = () => {
     outputRange: ['-15deg', '0deg', '15deg'],
   });
 
+  // Misma animación de clic, cada 3.5s solo si hay punto verde / notificaciones
+  useEffect(() => {
+    if (!isDriverView) return;
+    const hasNotif = driverHasUnreadNotif || !!driverActiveBookingId;
+    if (!hasNotif) return;
+    const id = setInterval(() => {
+      shakeDriverBell();
+    }, 3500);
+    return () => clearInterval(id);
+  }, [isDriverView, driverHasUnreadNotif, driverActiveBookingId, shakeDriverBell]);
+
   // Indicador verde: hay notificaciones de servicios pendientes en el modal
   useEffect(() => {
     if (!isDriverView) return;
@@ -4900,8 +4911,8 @@ const nS = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     backgroundColor: 'rgba(5, 26, 38, 0.92)',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#00E5FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
