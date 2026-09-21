@@ -413,7 +413,7 @@ const MapScreen = () => {
       .channel(`balance-bookings-${user.id}`)
       .on(
         'postgres_changes' as any,
-        { event: '*', schema: 'public', table: 'bookings', filter: `driver=eq.${user.id}` },
+        { event: '*', schema: 'public', table: 'reserva', filter: `id_conductor=eq.${user.id}` },
         () => { fetchBalanceBookings(); }
       )
       .subscribe();
@@ -697,7 +697,7 @@ const MapScreen = () => {
       .channel('index-new-bookings')
       .on(
         'postgres_changes' as any,
-        { event: 'INSERT', schema: 'public', table: 'bookings', filter: 'status=eq.NEW' },
+        { event: 'INSERT', schema: 'public', table: 'reserva', filter: 'estado=eq.NEW' },
         (payload: any) => {
           console.log('[DRIVER-FEED] Realtime INSERT recibido:', payload.new?.id, payload.new?.car_type);
           const booking = mapSupabaseBooking(payload.new);
@@ -710,9 +710,10 @@ const MapScreen = () => {
       )
       .on(
         'postgres_changes' as any,
-        { event: 'UPDATE', schema: 'public', table: 'bookings' },
+        { event: 'UPDATE', schema: 'public', table: 'reserva' },
         (payload: any) => {
-          if (payload.new.status !== 'NEW') {
+          const estado = payload.new.status ?? payload.new.estado;
+          if (estado !== 'NEW') {
             setFilteredBookings((prev: any[]) => prev.filter((b) => b.id !== payload.new.id));
           }
         }
@@ -2184,7 +2185,7 @@ const MapScreen = () => {
       .channel(channelName)
       .on(
         'postgres_changes' as any,
-        { event: '*', schema: 'public', table: 'bookings', filter: `driver=eq.${driverIdForBalance}` },
+        { event: '*', schema: 'public', table: 'reserva', filter: `id_conductor=eq.${driverIdForBalance}` },
         () => { fetchBalanceBookings(); }
       )
       .subscribe();

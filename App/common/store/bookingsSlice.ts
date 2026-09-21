@@ -30,26 +30,38 @@ import { addActualsToBooking } from "../other/sharedFunctions";
 // ─── Helpers Supabase ───────────────────────────────────────────────────────
 
 /** Convierte una fila de Supabase bookings al formato que usa Redux (compatible con legacy). */
+// Tolerante a DOS formas de fila:
+//  - vista de compatibilidad `bookings` (nombres viejos), y
+//  - payload de Realtime de la tabla `reserva` (nombres nuevos).
+// Por eso cada campo hace `row.<viejo> ?? row.<nuevo>`.
 export const mapSupabaseBooking = (row: any) => ({
   id: row.id,
-  status: row.status,
-  customer: row.customer,
+  status: row.status ?? row.estado,
+  customer: row.customer ?? row.id_cliente,
   customer_name: row.customer_name,
   customer_contact: row.customer_contact,
   customer_city: row.customer_city,
   customer_token: row.customer_token,
   customer_status: row.customer_status,
-  driver: row.driver,
+  driver: row.driver ?? row.id_conductor,
   driver_name: row.driver_name,
   driver_contact: row.driver_contact,
   driver_token: row.driver_token,
   driver_status: row.driver_status,
   driver_image: row.driver_image,
-  driver_arrived_time: row.driver_arrived_time,
-  pickup: { lat: row.pickup_lat, lng: row.pickup_lng, add: row.pickup_address },
-  drop: { lat: row.drop_lat, lng: row.drop_lng, add: row.drop_address },
-  pickupAddress: row.pickup_address,
-  dropAddress: row.drop_address,
+  driver_arrived_time: row.driver_arrived_time ?? row.conductor_llego_en,
+  pickup: {
+    lat: row.pickup_lat ?? row.origen_lat,
+    lng: row.pickup_lng ?? row.origen_lng,
+    add: row.pickup_address ?? row.origen_direccion,
+  },
+  drop: {
+    lat: row.drop_lat ?? row.destino_lat,
+    lng: row.drop_lng ?? row.destino_lng,
+    add: row.drop_address ?? row.destino_direccion,
+  },
+  pickupAddress: row.pickup_address ?? row.origen_direccion,
+  dropAddress: row.drop_address ?? row.destino_direccion,
   carType: row.car_type,
   car_image: row.car_image,
   vehicle_number: row.vehicle_number,
@@ -58,27 +70,27 @@ export const mapSupabaseBooking = (row: any) => ({
   vehicleColor: row.vehicle_color,
   vehicleMake: row.vehicle_make,
   plate_number: row.plate_number,
-  estimate: row.estimate,
-  trip_cost: row.trip_cost,
+  estimate: row.estimate ?? row.precio_estimado,
+  trip_cost: row.trip_cost ?? row.costo_viaje,
   convenience_fees: row.convenience_fees,
-  discount: row.discount,
-  driver_share: row.driver_share,
-  payment_mode: row.payment_mode,
-  reference: row.reference,
-  distance: row.distance,
-  estimateTime: row.duration,
+  discount: row.discount ?? row.descuento,
+  driver_share: row.driver_share ?? row.ganancia_conductor,
+  payment_mode: row.payment_mode ?? row.modo_pago,
+  reference: row.reference ?? row.referencia,
+  distance: row.distance ?? row.distancia_km,
+  estimateTime: row.duration ?? row.duracion_seg,
   tripType: row.trip_type,
   tripUrban: row.trip_urban,
   otp: row.otp,
   coords: row.coords,
-  startTime: row.trip_start_time,
-  endTime: row.trip_end_time,
+  startTime: row.trip_start_time ?? row.viaje_inicio_en,
+  endTime: row.trip_end_time ?? row.viaje_fin_en,
   total_trip_time: row.total_trip_time,
-  observations: row.observations,
+  observations: row.observations ?? row.observaciones,
   requestedDrivers: row.requested_drivers || {},
   driverEstimates: row.driver_estimates || {},
-  booking_date: row.booking_date,
-  created_at: row.created_at,
+  booking_date: row.booking_date ?? row.solicitado_en,
+  created_at: row.created_at ?? row.creado_en,
 });
 
 /** Actualiza un booking en Supabase a partir del objeto Redux. */
@@ -341,12 +353,12 @@ export const updateBookingAsync =
       .channel('new-bookings-realtime')
       .on(
         'postgres_changes' as any,
-        { event: 'INSERT', schema: 'public', table: 'bookings', filter: 'status=eq.NEW' },
+        { event: 'INSERT', schema: 'public', table: 'reserva', filter: 'estado=eq.NEW' },
         (payload: any) => handleNewBooking(payload.new)
       )
       .on(
         'postgres_changes' as any,
-        { event: 'UPDATE', schema: 'public', table: 'bookings', filter: 'status=eq.NEW' },
+        { event: 'UPDATE', schema: 'public', table: 'reserva', filter: 'estado=eq.NEW' },
         (payload: any) => handleNewBooking(payload.new)
       )
       .subscribe((status: string) => {

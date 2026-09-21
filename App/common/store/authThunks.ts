@@ -1,6 +1,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { SupabaseAuth } from '@/config/SupabaseAuth';
 import { SupabaseDatabase } from '@/config/SupabaseDatabase';
+import { supabase } from '@/config/SupabaseConfig';
 import { loginSuccess, setProfile, setError, setLoading } from './authSlice';
 import type { LoginCredentials, RegisterCredentials } from '@/config/SupabaseAuth';
 import type { UserProfile } from './authSlice'; // ✅ TIPO UNIFICADO
@@ -23,18 +24,17 @@ export const loginThunk = createAsyncThunk(
 
       const session = authResult.data;
 
-      // 2. Obtener perfil - USANDO TIPOS COMPATIBLES
-      const profileResult = await SupabaseDatabase.select('users', {}, [
-        { column: 'auth_id', operator: 'eq', value: session.user.id }
-      ]);
-      
-      if (!profileResult.success || !profileResult.data || profileResult.data.length === 0) {
+      // 2. Obtener perfil vía RPC get_perfil_movil (mapea persona+perfil+wallet+roles
+      //    a la forma UserProfile que consumen las pantallas). Esquema consolidado.
+      const { data: profileData, error: profileError } = await supabase.rpc('get_perfil_movil');
+
+      if (profileError || !profileData) {
         dispatch(setError({ flag: true, msg: 'Error obteniendo perfil de usuario' }));
         return rejectWithValue('Perfil no encontrado');
       }
 
       // ✅ CAST DIRECTO A TIPO UNIFICADO
-      const profile = profileResult.data[0] as UserProfile;
+      const profile = profileData as UserProfile;
 
       // 2.1 Bloquear acceso si la cuenta está bloqueada (Conductor o Cliente)
       if (profile.blocked) {
@@ -155,13 +155,11 @@ export const checkAuthThunk = createAsyncThunk(
 
       const session = sessionResult.data;
 
-      const profileResult = await SupabaseDatabase.select('users', {}, [
-        { column: 'auth_id', operator: 'eq', value: session.user.id }
-      ]);
-      
-      if (profileResult.success && profileResult.data && profileResult.data.length > 0) {
+      const { data: profileData } = await supabase.rpc('get_perfil_movil');
+
+      if (profileData) {
         // ✅ CAST DIRECTO A TIPO UNIFICADO
-        const profile = profileResult.data[0] as UserProfile;
+        const profile = profileData as UserProfile;
 
         // Si la cuenta fue bloqueada, cerrar sesión y negar acceso
         if (profile.blocked) {

@@ -527,10 +527,15 @@ const ReservationTripScreen = () => {
       .channel(`booking-cancel-${reservation.id}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'bookings', filter: `id=eq.${reservation.id}` },
+        { event: 'UPDATE', schema: 'public', table: 'reserva', filter: `id=eq.${reservation.id}` },
         (payload: any) => {
-          if (payload?.new?.status === 'CANCELLED') {
-            handleCancellation(payload.new.reason, payload.new.cancelled_by);
+          // reserva (nuevo): estado / motivo_cancelacion / cancelado_por
+          const estado = payload?.new?.status ?? payload?.new?.estado;
+          if (estado === 'CANCELLED') {
+            handleCancellation(
+              payload.new.reason ?? payload.new.motivo_cancelacion,
+              payload.new.cancelled_by ?? payload.new.cancelado_por,
+            );
           }
         },
       )

@@ -7,9 +7,18 @@ verify_jwt = false
 entrypoint = "./functions/generateAgoraToken/index.ts"
 
 [functions.notifyIncomingCall]
-verify_jwt = true
+# La app la llama sin token de sesión → debe ser pública (como generateAgoraToken).
+verify_jwt = false
 entrypoint = "./functions/notifyIncomingCall/index.ts"
 
-[functions.sync-driver-to-primary]
-verify_jwt = true
-entrypoint = "./functions/sync-driver-to-primary/index.ts"
+[functions.recordCallEvent]
+verify_jwt = false
+entrypoint = "./functions/recordCallEvent/index.ts"
+
+# sendPush y bookingWebhookDispatcher NO se listan aquí: quedan con verify_jwt=true
+# (default). Se invocan con el service_role JWT (dispatcher → sendPush, y el DB
+# Webhook → dispatcher). delete-account también queda en true: valida el JWT del
+# usuario internamente.
+
+# sync-driver-to-primary quedó OBSOLETA con la consolidación (era el puente entre
+# dos proyectos). No se despliega.

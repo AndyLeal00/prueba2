@@ -147,8 +147,8 @@ export default function PlateTrackingScreen() {
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'booking_tracking',
-            filter: `booking_id=eq.${row.booking_id}`,
+            table: 'reserva_tracking',
+            filter: `id_reserva=eq.${row.booking_id}`,
           },
           (payload) => {
             console.log('[PlateTracking] Realtime update received:', payload.new);

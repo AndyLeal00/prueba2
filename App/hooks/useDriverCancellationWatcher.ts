@@ -57,16 +57,24 @@ export function useDriverCancellationWatcher(showCancelModal: ShowCancelModal) {
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'bookings',
-          filter: `driver_id=eq.${driverId}`,
+          table: 'reserva',
+          filter: `id_conductor=eq.${driverId}`,
         },
         (payload: any) => {
           const next = payload?.new;
           const prev = payload?.old;
           if (!next) return;
+          // reserva (nuevo): estado / cancelado_por / motivo_cancelacion
+          const estado = next.status ?? next.estado;
+          const estadoPrev = prev?.status ?? prev?.estado;
           // Solo si transicionó a CANCELLED (no si ya estaba cancelado).
-          if (next.status === 'CANCELLED' && prev?.status !== 'CANCELLED') {
-            handleCancellation(next);
+          if (estado === 'CANCELLED' && estadoPrev !== 'CANCELLED') {
+            handleCancellation({
+              ...next,
+              status: estado,
+              cancelled_by: next.cancelled_by ?? next.cancelado_por,
+              reason: next.reason ?? next.motivo_cancelacion,
+            });
           }
         },
       )

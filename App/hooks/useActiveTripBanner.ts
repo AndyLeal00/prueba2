@@ -246,19 +246,21 @@ export function useActiveTripBanner() {
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'bookings',
+          table: 'reserva',
           filter: `id=eq.${id}`,
         },
         (payload) => {
-          const updated = payload.new as ActiveTripBannerBooking | null;
+          const updated = payload.new as any;
           if (!updated?.id) return;
+          // reserva (nuevo): estado; mantenemos `status` en la forma vieja del banner.
+          const estado = updated.status ?? updated.estado;
           setBookings((prev) => {
-            if (!isBannerBookingStatus(updated.status, isDriver)) {
+            if (!isBannerBookingStatus(estado, isDriver)) {
               return prev.filter((b) => b.id !== updated.id);
             }
             return prev.map((b) =>
               b.id === updated.id
-                ? { ...b, ...updated, counterpart_photo: b.counterpart_photo }
+                ? { ...b, ...updated, status: estado, counterpart_photo: b.counterpart_photo }
                 : b,
             );
           });

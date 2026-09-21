@@ -64,8 +64,8 @@ export const subscribeToDriverTracking = (
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'booking_tracking',
-          filter: `booking_id=eq.${bookingId}`
+          table: 'reserva_tracking',
+          filter: `id_reserva=eq.${bookingId}`
         },
         (payload) => {
           const record = payload.new;

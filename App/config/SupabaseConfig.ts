@@ -11,7 +11,8 @@ const SupabaseConfig = {
   anonKey: extra.SUPABASE_ANON_KEY as string,
 };
 
-import { Database } from './database.types';
+// Tipos generados del esquema CONSOLIDADO (aplicacioncore).
+import { Database } from './database.new.types';
 
 // ==================== INTERFACES TYPESCRIPT ====================
 interface SupabaseClientOptions {
@@ -263,13 +264,13 @@ export const Auth = {
   /**
    * Obtiene el perfil completo del usuario desde la tabla users
    */
-  getUserProfile: async (): Promise<Database['public']['Tables']['users']['Row'] | null> => {
+  getUserProfile: async (): Promise<Database['public']['Tables']['persona']['Row'] | null> => {
     try {
       const user = await Auth.getCurrentUser();
       if (!user) return null;
 
       const { data, error } = await supabase
-        .from('users')
+        .from('persona')
         .select('*')
         .eq('auth_id', user.id)
         .single();
@@ -318,7 +319,7 @@ export const Health = {
     try {
       // Test 1: Verificar conexion basica
       const { error: pingError } = await supabase
-        .from('users')
+        .from('persona')
         .select('count', { count: 'exact', head: true })
         .limit(1);
       
@@ -359,7 +360,7 @@ export const Health = {
 
     try {
       // Verificar que las tablas principales de T+Plus existan
-      const tablesToCheck = ['users', 'cars', 'bookings', 'car_types'];
+      const tablesToCheck = ['persona', 'vehiculo', 'reserva', 'categoria_vehiculo'];
       let successCount = 0;
 
       for (const table of tablesToCheck) {
@@ -582,14 +583,14 @@ export const Realtime = {
    */
   subscribeToBookings: (userId: string, callback: (payload: any) => void) => {
     return supabase
-      .channel('bookings-changes')
+      .channel('reserva-changes')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'bookings',
-          filter: `customer_id=eq.${userId}`
+          table: 'reserva',
+          filter: `id_cliente=eq.${userId}`
         },
         callback
       )
@@ -601,14 +602,14 @@ export const Realtime = {
    */
   subscribeToTracking: (bookingId: string, callback: (payload: any) => void) => {
     return supabase
-      .channel(`booking_tracking-${bookingId}`)
+      .channel(`reserva_tracking-${bookingId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'booking_tracking',
-          filter: `booking_id=eq.${bookingId}`
+          table: 'reserva_tracking',
+          filter: `id_reserva=eq.${bookingId}`
         },
         callback
       )
@@ -620,14 +621,14 @@ export const Realtime = {
    */
   subscribeToNotifications: (userId: string, callback: (payload: any) => void) => {
     return supabase
-      .channel('notifications-changes')
+      .channel('notificacion-changes')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`
+          table: 'notificacion',
+          filter: `id_persona=eq.${userId}`
         },
         callback
       )

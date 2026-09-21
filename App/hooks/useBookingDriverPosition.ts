@@ -83,8 +83,8 @@ export function useBookingDriverPosition(bookingId: string | null | undefined): 
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'booking_tracking',
-          filter: `booking_id=eq.${bookingId}`,
+          table: 'reserva_tracking',
+          filter: `id_reserva=eq.${bookingId}`,
         },
         (payload) => {
           if (cancelled) return;

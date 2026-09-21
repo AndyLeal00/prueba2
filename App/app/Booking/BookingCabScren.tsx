@@ -250,7 +250,7 @@ const BookingCabScreen = () => {
         event: '*',
         schema: 'public',
         table: 'chat_messages',
-        filter: `booking_id=eq.${currentBooking.id}`,
+        filter: `id_reserva=eq.${currentBooking.id}`,
       }, (payload) => {
         if (payload.new && (payload.new as any).source !== user?.usertype) {
           setUnreadMessages(true);
@@ -345,7 +345,7 @@ const BookingCabScreen = () => {
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
-        table: 'bookings',
+        table: 'reserva',
         filter: `id=eq.${currentBooking.id}`,
       }, (payload) => {
         if (payload.new) {
@@ -354,14 +354,14 @@ const BookingCabScreen = () => {
             ...currentBooking,
             ...payload.new,
             pickup: {
-              lat: payload.new.pickup_lat ?? currentBooking.pickup?.lat,
-              lng: payload.new.pickup_lng ?? currentBooking.pickup?.lng,
-              add: payload.new.pickup_address ?? currentBooking.pickup?.add,
+              lat: payload.new.pickup_lat ?? payload.new.origen_lat ?? currentBooking.pickup?.lat,
+              lng: payload.new.pickup_lng ?? payload.new.origen_lng ?? currentBooking.pickup?.lng,
+              add: payload.new.pickup_address ?? payload.new.origen_direccion ?? currentBooking.pickup?.add,
             },
             drop: {
-              lat: payload.new.drop_lat ?? currentBooking.drop?.lat,
-              lng: payload.new.drop_lng ?? currentBooking.drop?.lng,
-              add: payload.new.drop_address ?? currentBooking.drop?.add,
+              lat: payload.new.drop_lat ?? payload.new.destino_lat ?? currentBooking.drop?.lat,
+              lng: payload.new.drop_lng ?? payload.new.destino_lng ?? currentBooking.drop?.lng,
+              add: payload.new.drop_address ?? payload.new.destino_direccion ?? currentBooking.drop?.add,
             },
           };
           setCurrentBooking(updated);
@@ -461,8 +461,8 @@ const BookingCabScreen = () => {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'booking_tracking',
-          filter: `booking_id=eq.${currentBooking.id}`,
+          table: 'reserva_tracking',
+          filter: `id_reserva=eq.${currentBooking.id}`,
         },
         (payload) => {
           const row = payload.new as any;

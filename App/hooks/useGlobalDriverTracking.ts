@@ -145,8 +145,8 @@ export function useGlobalDriverTracking() {
           {
             event: '*',
             schema: 'public',
-            table: 'bookings',
-            filter: `driver_id=eq.${publicDriverId}`,
+            table: 'reserva',
+            filter: `id_conductor=eq.${publicDriverId}`,
           },
           () => {
             reevaluate();

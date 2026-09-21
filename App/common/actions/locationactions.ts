@@ -68,8 +68,8 @@ export const fetchBookingLocations = (bookingId: string) => async (dispatch: Dis
             {
                 event: 'INSERT',
                 schema: 'public',
-                table: 'booking_tracking',
-                filter: `booking_id=eq.${bookingId}`,
+                table: 'reserva_tracking',
+                filter: `id_reserva=eq.${bookingId}`,
             },
             (payload: any) => {
                 if (payload.new?.lat != null && payload.new?.lng != null) {

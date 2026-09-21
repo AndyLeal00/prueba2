@@ -100,7 +100,7 @@ export default function PaymentScreen(props) {
       .channel(`booking-payment-${booking.id}`)
       .on(
         'postgres_changes' as any,
-        { event: 'UPDATE', schema: 'public', table: 'bookings', filter: `id=eq.${booking.id}` },
+        { event: 'UPDATE', schema: 'public', table: 'reserva', filter: `id=eq.${booking.id}` },
         (payload: any) => { if (payload.new) setBooking(payload.new); }
       )
       .subscribe();

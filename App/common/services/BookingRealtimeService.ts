@@ -39,16 +39,18 @@ export class BookingRealtimeService {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'bookings',
-          filter: `customer_city=eq.${city}`,
+          table: 'reserva',
+          // `reserva` no tiene columna de ciudad (era denormalizada). Filtramos por
+          // estado y la ciudad se filtra en el cliente (city=${city}) si aplica.
+          filter: `estado=eq.NEW`,
         },
         (payload) => {
           console.log('🔔 [BookingRealtime] Nueva reserva detectada:', payload);
-          
+
           const newBooking = payload.new;
-          
+
           // Verificar que sea una reserva NEW
-          if (newBooking.status === 'NEW') {
+          if ((newBooking.status ?? newBooking.estado) === 'NEW') {
             console.log('✅ [BookingRealtime] Notificando nueva reserva:', newBooking.id);
             onNewBooking(newBooking);
           }
@@ -88,7 +90,7 @@ export class BookingRealtimeService {
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'bookings',
+          table: 'reserva',
           filter: `id=eq.${bookingId}`,
         },
         (payload) => {
@@ -130,8 +132,8 @@ export class BookingRealtimeService {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'booking_tracking',
-          filter: `booking_id=eq.${bookingId}`,
+          table: 'reserva_tracking',
+          filter: `id_reserva=eq.${bookingId}`,
         },
         (payload) => {
           console.log('📍 [BookingRealtime] Nueva ubicación:', payload.new);
