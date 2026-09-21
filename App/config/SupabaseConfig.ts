@@ -404,7 +404,9 @@ export const Health = {
 
     if (!SupabaseConfig.anonKey) {
       errors.push('SUPABASE_ANON_KEY no configurada');
-    } else if (SupabaseConfig.anonKey.length < 100) {
+    } else if (!SupabaseConfig.anonKey.startsWith('sb_publishable_') && SupabaseConfig.anonKey.length < 100) {
+      // Las nuevas publishable keys (sb_publishable_...) son cortas y válidas; solo
+      // advertir si NO es una de ellas y además parece un JWT truncado.
       warnings.push('SUPABASE_ANON_KEY parece ser muy corta');
     }
 

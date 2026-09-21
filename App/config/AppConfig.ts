@@ -183,8 +183,12 @@ export const validateConfiguration = (): {
     errors.push('SUPABASE_URL inválida - debe contener supabase.co');
   }
   
-  if (!SupabaseConfig.anonKey || SupabaseConfig.anonKey.length < 100) {
-    errors.push('SUPABASE_ANON_KEY inválida - debe ser un JWT válido');
+  // Acepta ambos formatos: JWT legacy (eyJ...) y las nuevas API keys de Supabase
+  // (sb_publishable_... para el cliente). Las nuevas son cortas y NO son JWT.
+  const anon = SupabaseConfig.anonKey;
+  const anonValida = !!anon && (anon.startsWith('sb_publishable_') || (anon.startsWith('eyJ') && anon.length >= 100));
+  if (!anonValida) {
+    errors.push('SUPABASE_ANON_KEY inválida - debe ser un JWT (eyJ...) o una publishable key (sb_publishable_...)');
   }
   
   // UUID v4: 8-4-4-4-12 caracteres hex + guiones (ej: a1b2c3d4-e5f6-7890-abcd-ef1234567890)
