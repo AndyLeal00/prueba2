@@ -317,15 +317,20 @@ export const Health = {
     };
 
     try {
-      // Test 1: Verificar conexion basica
+      // Test 1: Verificar conexion basica.
+      // Se consulta un catálogo público (categoria_vehiculo) legible por anon.
+      // IMPORTANTE: con RLS, un error de permiso/JWT igual significa que el
+      // servidor RESPONDIÓ (está accesible). Solo un fallo de red (throw →
+      // catch de abajo) cuenta como desconexión. Así, no estar logueado no
+      // marca "FALLIDO".
       const { error: pingError } = await supabase
-        .from('persona')
-        .select('count', { count: 'exact', head: true })
+        .from('categoria_vehiculo')
+        .select('id', { count: 'exact', head: true })
         .limit(1);
-      
+
       if (pingError) {
-        status.error = `Test basico falló: ${pingError.message}`;
-        return status;
+        // El servidor contestó aunque restrinja filas por RLS → sigue conectado.
+        console.warn('[testConnection] ping restringido (server accesible):', pingError.message || (pingError as any).code || pingError);
       }
 
       // Test 2: Verificar autenticacion funciona
