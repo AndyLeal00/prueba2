@@ -114,12 +114,25 @@ TaskManager.defineTask(DRIVER_LOCATION_TASK, async ({ data, error }) => {
     console.warn('[driverLocationTask] error guardando respaldo local:', e);
   }
 
-  // RLS está desactivado en booking_tracking — anon key es suficiente.
+  // En core `booking_tracking` ya no admite escritura anónima: hay que enviar el
+  // JWT del conductor. getSafeSession() renueva el token si está por vencer
+  // (la task corre en segundo plano y el token dura 1 hora).
+  let accessToken: string | null = null;
+  try {
+    accessToken = (await getSafeSession())?.access_token ?? null;
+  } catch {}
+  if (!accessToken) {
+    console.warn('[driverLocationTask] sin sesión válida — el punto queda solo en el respaldo local');
+    return;
+  }
+
+  // La vista booking_tracking de core no tiene columna `accuracy` (PostgREST
+  // rechaza el insert con PGRST204); la precisión solo vive en el respaldo local.
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/booking_tracking`, {
     method: 'POST',
     headers: {
       'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=minimal',
     },
@@ -128,7 +141,6 @@ TaskManager.defineTask(DRIVER_LOCATION_TASK, async ({ data, error }) => {
       driver_id: driverId,
       lat,
       lng,
-      accuracy: accuracy ?? null,
     }),
   });
 
